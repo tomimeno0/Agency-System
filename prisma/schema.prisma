@@ -1,0 +1,482 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  EDITOR
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  LOCKED
+}
+
+enum ClientStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TaskState {
+  DRAFT
+  PENDING_ASSIGNMENT
+  OFFERED
+  ACCEPTED
+  IN_EDITING
+  UPLOADED
+  IN_REVIEW
+  NEEDS_CORRECTION
+  APPROVED
+  DELIVERED
+  CLOSED
+  CANCELLED
+}
+
+enum AssignmentStatus {
+  ASSIGNED
+  ACCEPTED
+  REJECTED
+  COMPLETED
+}
+
+enum SubmissionStatus {
+  SUBMITTED
+  SUPERSEDED
+}
+
+enum ReviewDecision {
+  APPROVED
+  NEEDS_CORRECTION
+}
+
+enum PaymentStatus {
+  CALCULATED
+  PENDING_OWNER_APPROVAL
+  APPROVED
+  PAID
+  CANCELLED
+}
+
+enum NotificationType {
+  NEW_TASK
+  TASK_ACCEPTED
+  TASK_OVERDUE
+  REVIEW_REQUIRED
+  PAYMENT_SETTLED
+  REMINDER
+  SYSTEM
+}
+
+enum NotificationStatus {
+  UNREAD
+  READ
+}
+
+enum LearningLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+}
+
+enum LearningProgressStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+}
+
+model User {
+  id                  String   @id @default(cuid())
+  publicUuid          String   @unique @default(uuid())
+  email               String   @unique
+  passwordHash        String
+  phoneEncrypted      String?
+  phoneKeyVersion     Int?
+  fullName            String?
+  displayName         String
+  avatarUrl           String?
+  role                Role
+  status              UserStatus @default(ACTIVE)
+  country             String?
+  timezone            String   @default("UTC")
+  declaredLevel       LearningLevel?
+  softwareStack       Json?
+  availabilityText    String?
+  failedLoginAttempts Int      @default(0)
+  lockUntil           DateTime?
+  lastLoginAt         DateTime?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  accounts            Account[]
+  sessions            Session[]
+  createdClients      Client[]           @relation("ClientCreatedBy")
+  createdProjects     Project[]          @relation("ProjectCreatedBy")
+  createdTasks        Task[]             @relation("TaskCreatedBy")
+  taskAssignments     TaskAssignment[]   @relation("AssignmentEditor")
+  submissions         Submission[]       @relation("SubmissionAuthor")
+  reviews             Review[]           @relation("ReviewReviewer")
+  editorEarnings      EditorEarning[]    @relation("EditorEarnings")
+  approvedEarnings    EditorEarning[]    @relation("ApprovedEarnings")
+  notifications       Notification[]
+  auditLogs           AuditLog[]         @relation("AuditActor")
+  passwordResetTokens PasswordResetToken[]
+  taskFiles           TaskFile[]         @relation("FileUploader")
+  taskStatusChanges   TaskStatusHistory[] @relation("TaskStatusChangedBy")
+  integrationSecrets  IntegrationSecret[] @relation("IntegrationSecretCreatedBy")
+  learningProgress    LearningProgress[]
+}
+
+model Client {
+  id              String      @id @default(cuid())
+  name            String
+  brandName       String?
+  email           String?
+  phoneEncrypted  String?
+  phoneKeyVersion Int?
+  status          ClientStatus @default(ACTIVE)
+  notesEncrypted  String?
+  notesKeyVersion Int?
+  stylePreferences Json?
+  references      Json?
+  packSize        Int?
+  packPrice       Decimal?    @db.Decimal(14, 2)
+  createdById     String
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  createdBy       User        @relation("ClientCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  projects        Project[]
+  payments        Payment[]
+
+  @@index([createdById])
+}
+
+model Project {
+  id                String    @id @default(cuid())
+  clientId          String
+  title             String
+  description       String?
+  packSize          Int
+  packPrice         Decimal   @db.Decimal(14, 2)
+  currency          String    @default("USD")
+  defaultStyleNotes String?
+  active            Boolean   @default(true)
+  createdById       String
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  client            Client    @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  createdBy         User      @relation("ProjectCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  tasks             Task[]
+  payments          Payment[]
+
+  @@index([clientId])
+  @@index([createdById])
+}
+
+model Task {
+  id                       String       @id @default(cuid())
+  projectId                String
+  title                    String
+  description              String?
+  instructions             String?
+  deadlineAt               DateTime?
+  priority                 TaskPriority @default(MEDIUM)
+  estimatedDurationMinutes Int?
+  state                    TaskState    @default(DRAFT)
+  assignedMode             String       @default("manual")
+  createdById              String
+  createdAt                DateTime     @default(now())
+  updatedAt                DateTime     @updatedAt
+
+  project                  Project      @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  createdBy                User         @relation("TaskCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  assignments              TaskAssignment[]
+  statusHistory            TaskStatusHistory[]
+  files                    TaskFile[]
+
+  @@index([projectId])
+  @@index([state])
+  @@index([deadlineAt])
+}
+
+model TaskAssignment {
+  id               String           @id @default(cuid())
+  taskId           String
+  editorId         String
+  status           AssignmentStatus @default(ASSIGNED)
+  assignedAt       DateTime         @default(now())
+  acceptedAt       DateTime?
+  rejectedAt       DateTime?
+  completedAt      DateTime?
+  percentageOfTask Decimal          @db.Decimal(5, 2) @default(100)
+  rejectionReason  String?
+
+  task             Task             @relation(fields: [taskId], references: [id], onDelete: Restrict)
+  editor           User             @relation("AssignmentEditor", fields: [editorId], references: [id], onDelete: Restrict)
+  submissions      Submission[]
+  earnings         EditorEarning[]
+  files            TaskFile[]
+
+  @@index([taskId])
+  @@index([editorId])
+}
+
+model TaskStatusHistory {
+  id          String    @id @default(cuid())
+  taskId      String
+  fromState   TaskState?
+  toState     TaskState
+  changedById String
+  comment     String?
+  changedAt   DateTime  @default(now())
+
+  task        Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  changedBy   User      @relation("TaskStatusChangedBy", fields: [changedById], references: [id], onDelete: Restrict)
+
+  @@index([taskId, changedAt])
+}
+
+model TaskFile {
+  id           String         @id @default(cuid())
+  taskId       String?
+  assignmentId String?
+  uploadedById String
+  storageKey   String         @unique
+  bucket       String
+  originalName String
+  mimeType     String
+  sizeBytes    Int
+  version      Int            @default(1)
+  isFinal      Boolean        @default(false)
+  createdAt    DateTime       @default(now())
+
+  task         Task?          @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  assignment   TaskAssignment? @relation(fields: [assignmentId], references: [id], onDelete: SetNull)
+  uploadedBy   User           @relation("FileUploader", fields: [uploadedById], references: [id], onDelete: Restrict)
+  submissions  Submission[]
+
+  @@index([taskId])
+  @@index([assignmentId])
+}
+
+model Submission {
+  id               String           @id @default(cuid())
+  taskAssignmentId String
+  submittedById    String
+  submittedAt      DateTime         @default(now())
+  fileId           String?
+  notes            String?
+  status           SubmissionStatus @default(SUBMITTED)
+
+  taskAssignment   TaskAssignment   @relation(fields: [taskAssignmentId], references: [id], onDelete: Restrict)
+  submittedBy      User             @relation("SubmissionAuthor", fields: [submittedById], references: [id], onDelete: Restrict)
+  file             TaskFile?        @relation(fields: [fileId], references: [id], onDelete: SetNull)
+  reviews          Review[]
+
+  @@index([taskAssignmentId])
+}
+
+model Review {
+  id           String         @id @default(cuid())
+  submissionId String
+  reviewedById String
+  decision     ReviewDecision
+  comments     String?
+  reviewedAt   DateTime       @default(now())
+
+  submission   Submission     @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  reviewedBy   User           @relation("ReviewReviewer", fields: [reviewedById], references: [id], onDelete: Restrict)
+
+  @@index([submissionId])
+}
+
+model Payment {
+  id          String        @id @default(cuid())
+  projectId   String?
+  clientId    String?
+  totalAmount Decimal       @db.Decimal(14, 2)
+  currency    String        @default("USD")
+  status      PaymentStatus @default(CALCULATED)
+  billedAt    DateTime?
+  paidAt      DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  project     Project?      @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  client      Client?       @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  earnings    EditorEarning[]
+
+  @@index([projectId])
+  @@index([clientId])
+}
+
+model EditorEarning {
+  id                     String        @id @default(cuid())
+  taskAssignmentId       String        @unique
+  editorId               String
+  paymentId              String?
+  baseValue              Decimal       @db.Decimal(14, 2)
+  editorPercentage       Decimal       @db.Decimal(5, 2)
+  agencyPercentage       Decimal       @db.Decimal(5, 2)
+  assignmentPercentage   Decimal       @db.Decimal(5, 2)
+  grossAmount            Decimal       @db.Decimal(14, 2)
+  agencyCommissionAmount Decimal       @db.Decimal(14, 2)
+  editorNetAmount        Decimal       @db.Decimal(14, 2)
+  currency               String        @default("USD")
+  status                 PaymentStatus @default(CALCULATED)
+  calculatedAt           DateTime      @default(now())
+  submittedForApprovalAt DateTime?
+  approvedAt             DateTime?
+  paidAt                 DateTime?
+  approvedById           String?
+  notes                  String?
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
+
+  taskAssignment         TaskAssignment @relation(fields: [taskAssignmentId], references: [id], onDelete: Restrict)
+  editor                 User           @relation("EditorEarnings", fields: [editorId], references: [id], onDelete: Restrict)
+  payment                Payment?       @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  approvedBy             User?          @relation("ApprovedEarnings", fields: [approvedById], references: [id], onDelete: SetNull)
+
+  @@index([editorId])
+  @@index([status])
+}
+
+model LearningResource {
+  id          String      @id @default(cuid())
+  title       String
+  description String?
+  url         String      @unique
+  level       LearningLevel
+  tags        String[]
+  isActive    Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  progress    LearningProgress[]
+}
+
+model LearningProgress {
+  id          String                  @id @default(cuid())
+  userId      String
+  resourceId  String
+  status      LearningProgressStatus  @default(NOT_STARTED)
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
+
+  user        User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resource    LearningResource        @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, resourceId])
+}
+
+model Notification {
+  id           String             @id @default(cuid())
+  userId       String
+  type         NotificationType
+  title        String
+  message      String
+  status       NotificationStatus @default(UNREAD)
+  metadataJson Json?
+  createdAt    DateTime           @default(now())
+  readAt       DateTime?
+
+  user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+}
+
+model AuditLog {
+  id           String   @id @default(cuid())
+  actorUserId  String?
+  action       String
+  entityType   String
+  entityId     String?
+  metadataJson Json?
+  ip           String?
+  userAgent    String?
+  createdAt    DateTime @default(now())
+
+  actor        User?    @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([entityType, entityId])
+}
+
+model IntegrationSecret {
+  id             String   @id @default(cuid())
+  name           String   @unique
+  description    String?
+  valueEncrypted String
+  keyVersion     Int
+  createdById    String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  createdBy      User     @relation("IntegrationSecretCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+}
+
+model PasswordResetToken {
+  id         String   @id @default(cuid())
+  userId     String
+  tokenHash  String   @unique
+  expiresAt  DateTime
+  usedAt     DateTime?
+  createdAt  DateTime @default(now())
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}

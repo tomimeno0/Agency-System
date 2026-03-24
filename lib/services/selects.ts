@@ -1,0 +1,18 @@
+export const userSafeSelect = {
+  id: true,
+  publicUuid: true,
+  email: true,
+  fullName: true,
+  displayName: true,
+  avatarUrl: true,
+  role: true,
+  status: true,
+  country: true,
+  timezone: true,
+  declaredLevel: true,
+  softwareStack: true,
+  availabilityText: true,
+  lastLoginAt: true,
+  createdAt: true,
+  updatedAt: true,
+} as const;
