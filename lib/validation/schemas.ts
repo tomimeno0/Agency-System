@@ -1,5 +1,6 @@
 import {
   AssignmentStatus,
+  AssignmentMode,
   LearningLevel,
   LearningProgressStatus,
   NotificationStatus,
@@ -24,15 +25,20 @@ export const userStatusSchema = z.nativeEnum(UserStatus);
 export const taskStateSchema = z.nativeEnum(TaskState);
 export const taskPrioritySchema = z.nativeEnum(TaskPriority);
 export const assignmentStatusSchema = z.nativeEnum(AssignmentStatus);
+export const assignmentModeSchema = z.nativeEnum(AssignmentMode);
 export const reviewDecisionSchema = z.nativeEnum(ReviewDecision);
 export const paymentStatusSchema = z.nativeEnum(PaymentStatus);
 export const notificationStatusSchema = z.nativeEnum(NotificationStatus);
 export const learningLevelSchema = z.nativeEnum(LearningLevel);
 export const learningProgressStatusSchema = z.nativeEnum(LearningProgressStatus);
 
+const passwordPolicySchema = z
+  .string()
+  .min(7, "Debe tener al menos 7 caracteres");
+
 export const userCreateSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(10),
+  password: passwordPolicySchema,
   displayName: z.string().min(2).max(80),
   fullName: z.string().min(2).max(120).optional(),
   avatarUrl: z.string().url().optional(),
@@ -79,7 +85,9 @@ export const projectCreateSchema = z.object({
 export const projectUpdateSchema = projectCreateSchema.partial().omit({ clientId: true });
 
 export const taskCreateSchema = z.object({
-  projectId: cuidSchema,
+  projectId: cuidSchema.optional(),
+  clientId: cuidSchema.optional(),
+  directEditorId: cuidSchema.optional(),
   title: z.string().min(2).max(160),
   description: z.string().max(3000).optional(),
   instructions: z.string().max(8000).optional(),
@@ -87,10 +95,13 @@ export const taskCreateSchema = z.object({
   priority: taskPrioritySchema.default(TaskPriority.MEDIUM),
   estimatedDurationMinutes: z.number().int().positive().optional(),
   assignedMode: z.enum(["manual", "offered"]).default("manual"),
+  assignmentMode: assignmentModeSchema.optional(),
+  totalVideos: z.number().int().positive().optional(),
+  splitChunkSize: z.number().int().positive().default(10),
   state: taskStateSchema.default(TaskState.DRAFT),
 });
 
-export const taskUpdateSchema = taskCreateSchema.partial().omit({ projectId: true });
+export const taskUpdateSchema = taskCreateSchema.partial();
 
 export const assignmentCreateSchema = z.object({
   editorId: cuidSchema,
@@ -152,6 +163,15 @@ export const learningProgressSchema = z.object({
   status: learningProgressStatusSchema,
 });
 
+export const learningResourceCreateSchema = z.object({
+  title: z.string().min(3).max(180),
+  description: z.string().max(2000).optional(),
+  url: z.string().url(),
+  level: learningLevelSchema,
+  tags: z.array(z.string().min(1)).max(20).default([]),
+  isActive: z.boolean().default(true),
+});
+
 export const notificationReadSchema = z.object({
   read: z.boolean().default(true),
 });
@@ -175,5 +195,14 @@ export const resetPasswordRequestSchema = z.object({
 
 export const resetPasswordConfirmSchema = z.object({
   token: z.string().min(20),
-  newPassword: z.string().min(10),
+  newPassword: passwordPolicySchema,
+});
+
+export const registerSchema = z.object({
+  displayName: z.string().min(2).max(80),
+  email: z.string().email(),
+  password: passwordPolicySchema,
+  fullName: z.string().min(2).max(120).optional(),
+  country: z.string().max(80).optional(),
+  timezone: z.string().min(2).max(80).optional(),
 });

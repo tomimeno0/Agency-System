@@ -1,6 +1,7 @@
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import { Role, UserStatus } from "@prisma/client";
 import { NextAuthOptions } from "next-auth";
+import { JWT } from "next-auth/jwt";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
@@ -18,11 +19,16 @@ const credentialsSchema = z.object({
 const MAX_LOGIN_ATTEMPTS = 5;
 const LOCK_MINUTES = 15;
 
+type AppJwt = JWT & {
+  role?: Role;
+  status?: UserStatus;
+};
+
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
   secret: env.NEXTAUTH_SECRET,
   session: {
-    strategy: "database",
+    strategy: "jwt",
     maxAge: 60 * 60 * 24 * 7,
     updateAge: 60 * 60,
   },
@@ -67,7 +73,11 @@ export const authOptions: NextAuthOptions = {
           return null;
         }
 
-        if (user.status === UserStatus.INACTIVE || user.status === UserStatus.LOCKED) {
+        if (
+          user.status === UserStatus.PENDING_APPROVAL ||
+          user.status === UserStatus.INACTIVE ||
+          user.status === UserStatus.LOCKED
+        ) {
           return null;
         }
 
@@ -138,11 +148,20 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   callbacks: {
-    session: async ({ session, user }) => {
+    jwt: async ({ token, user }) => {
+      const appToken = token as AppJwt;
+      if (user) {
+        appToken.role = user.role as Role;
+        appToken.status = user.status as UserStatus;
+      }
+      return appToken;
+    },
+    session: async ({ session, token }) => {
+      const appToken = token as AppJwt;
       if (session.user) {
-        session.user.id = user.id;
-        session.user.role = user.role as Role;
-        session.user.status = user.status as UserStatus;
+        session.user.id = appToken.sub ?? session.user.id;
+        session.user.role = appToken.role ?? Role.EDITOR;
+        session.user.status = appToken.status ?? UserStatus.ACTIVE;
       }
       return session;
     },

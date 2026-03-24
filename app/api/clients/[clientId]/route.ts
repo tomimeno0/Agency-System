@@ -27,7 +27,7 @@ function mapClient(client: {
 
 export const GET = defineRoute(async (_request, context, requestId) => {
   const actor = await requireSessionUser();
-  requireRole(actor, [Role.OWNER, Role.ADMIN]);
+  requireRole(actor, [Role.OWNER]);
 
   const { clientId } = await context.params;
   const client = await prisma.client.findUniqueOrThrow({ where: { id: clientId } });
@@ -37,7 +37,7 @@ export const GET = defineRoute(async (_request, context, requestId) => {
 
 export const PATCH = defineRoute(async (request, context, requestId) => {
   const actor = await requireSessionUser();
-  requireRole(actor, [Role.OWNER, Role.ADMIN]);
+  requireRole(actor, [Role.OWNER]);
 
   const { clientId } = await context.params;
   const payload = clientUpdateSchema.parse(await parseJson(request));
@@ -75,4 +75,27 @@ export const PATCH = defineRoute(async (request, context, requestId) => {
   });
 
   return ok(mapClient(client), requestId);
+});
+
+export const DELETE = defineRoute(async (request, context, requestId) => {
+  const actor = await requireSessionUser();
+  requireRole(actor, [Role.OWNER]);
+
+  const { clientId } = await context.params;
+  await prisma.client.delete({
+    where: { id: clientId },
+  });
+
+  const { ip, userAgent } = requestMeta(request);
+  await appendAuditLog({
+    actorUserId: actor.id,
+    action: "clients.delete",
+    entityType: "Client",
+    entityId: clientId,
+    metadataJson: {},
+    ip,
+    userAgent,
+  });
+
+  return ok({ id: clientId, deleted: true }, requestId);
 });

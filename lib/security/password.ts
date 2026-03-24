@@ -1,19 +1,12 @@
 import { hash, verify } from "@node-rs/argon2";
 
-const PASSWORD_MIN_LENGTH = 10;
+const PASSWORD_MIN_LENGTH = 7;
 
 export function assertPasswordPolicy(password: string): void {
-  const strongEnough =
-    password.length >= PASSWORD_MIN_LENGTH &&
-    /[a-z]/.test(password) &&
-    /[A-Z]/.test(password) &&
-    /\d/.test(password) &&
-    /[^A-Za-z0-9]/.test(password);
+  const strongEnough = password.length >= PASSWORD_MIN_LENGTH;
 
   if (!strongEnough) {
-    throw new Error(
-      "Password must have at least 10 chars and include upper/lowercase, a number, and a symbol.",
-    );
+    throw new Error("Password must have at least 7 characters.");
   }
 }
 

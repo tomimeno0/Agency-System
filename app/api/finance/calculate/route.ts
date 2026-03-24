@@ -9,8 +9,8 @@ import { appendAuditLog, requestMeta } from "@/lib/services/audit";
 
 export const POST = defineRoute(async (request, _context, requestId) => {
   const actor = await requireSessionUser();
-  if (actor.role === Role.EDITOR) {
-    forbidden("Editor cannot calculate earnings");
+  if (actor.role !== Role.OWNER) {
+    forbidden("Solo owner puede calcular finanzas");
   }
 
   const payload = financeCalculateSchema.parse(await parseJson(request));

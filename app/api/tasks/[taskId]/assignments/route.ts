@@ -1,4 +1,4 @@
-import { AssignmentStatus, NotificationType, Role, TaskState } from "@prisma/client";
+﻿import { AssignmentMode, AssignmentStatus, NotificationType, Role, TaskAssignmentFlowStatus, TaskState } from "@prisma/client";
 import { defineRoute, parseJson } from "@/lib/http/route";
 import { ok } from "@/lib/http/response";
 import { conflict, forbidden, notFound } from "@/lib/http/errors";
@@ -6,7 +6,6 @@ import { prisma } from "@/lib/db";
 import { requireSessionUser } from "@/lib/auth/session";
 import { assignmentCreateSchema } from "@/lib/validation/schemas";
 import { appendAuditLog, requestMeta } from "@/lib/services/audit";
-import { assertTaskTransitionAllowed } from "@/lib/services/task-state";
 import { createNotification } from "@/lib/services/notifications";
 
 export const POST = defineRoute(async (request, context, requestId) => {
@@ -33,41 +32,63 @@ export const POST = defineRoute(async (request, context, requestId) => {
       notFound("Task not found");
     }
 
-    const existingOpenAssignment = await tx.taskAssignment.findFirst({
+    const acceptedAssignment = await tx.taskAssignment.findFirst({
       where: {
         taskId,
-        editorId: editor.id,
-        status: { in: [AssignmentStatus.ASSIGNED, AssignmentStatus.ACCEPTED] },
+        status: AssignmentStatus.ACCEPTED,
       },
     });
 
-    if (existingOpenAssignment) {
-      conflict("Editor already has an active assignment for this task");
+    if (acceptedAssignment) {
+      conflict("Task already accepted by another editor");
     }
 
-    assertTaskTransitionAllowed(task.state, TaskState.OFFERED);
+    await tx.taskAssignment.updateMany({
+      where: {
+        taskId,
+        status: AssignmentStatus.ASSIGNED,
+      },
+      data: {
+        status: AssignmentStatus.CANCELLED,
+        autoCancelledAt: new Date(),
+        rejectionReason: "Manual assignment override",
+      },
+    });
 
     const assignment = await tx.taskAssignment.create({
       data: {
         taskId,
         editorId: editor.id,
         percentageOfTask: payload.percentageOfTask,
-        status: AssignmentStatus.ASSIGNED,
+        status: AssignmentStatus.ACCEPTED,
+        acceptedAt: new Date(),
       },
     });
 
     await tx.task.update({
       where: { id: taskId },
-      data: { state: TaskState.OFFERED },
+      data: {
+        assignmentMode: AssignmentMode.MANUAL,
+        assignmentFlowStatus: TaskAssignmentFlowStatus.ACCEPTED,
+        state: TaskState.ACCEPTED,
+        offerExpiresAt: null,
+      },
     });
 
     await tx.taskStatusHistory.create({
       data: {
         taskId,
         fromState: task.state,
-        toState: TaskState.OFFERED,
+        toState: TaskState.ACCEPTED,
         changedById: actor.id,
-        comment: "Task offered to editor",
+        comment: "Manual assignment accepted",
+      },
+    });
+
+    await tx.user.update({
+      where: { id: editor.id },
+      data: {
+        workloadScore: { increment: 1 },
       },
     });
 
@@ -77,15 +98,15 @@ export const POST = defineRoute(async (request, context, requestId) => {
   await createNotification({
     userId: editor.id,
     type: NotificationType.NEW_TASK,
-    title: "Nueva tarea ofrecida",
-    message: `Tenés una nueva tarea asignada para revisar y aceptar.`,
+    title: "Tarea asignada manualmente",
+    message: "Se te asigno una tarea de forma manual.",
     metadataJson: { taskId, assignmentId: result.id },
   });
 
   const { ip, userAgent } = requestMeta(request);
   await appendAuditLog({
     actorUserId: actor.id,
-    action: "tasks.assignment_created",
+    action: "tasks.manual_assignment_created",
     entityType: "TaskAssignment",
     entityId: result.id,
     metadataJson: {

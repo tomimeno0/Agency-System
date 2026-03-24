@@ -1,18 +1,22 @@
-import { PrismaClient, LearningLevel, Role, UserStatus } from "@prisma/client";
+import "dotenv/config";
+import { LearningLevel, Role, SystemAssignmentMode, UserStatus } from "@prisma/client";
 import { hashPassword } from "../lib/security/password";
-
-const prisma = new PrismaClient();
+import { prisma } from "../lib/db";
 
 async function main() {
-  const ownerEmail = process.env.SEED_OWNER_EMAIL ?? "owner@example.com";
-  const ownerPassword = process.env.SEED_OWNER_PASSWORD ?? "ChangeMe123!";
+  const ownerEmail = process.env.SEED_OWNER_EMAIL ?? "editexstudioo@gmail.com";
+  const ownerPassword = process.env.SEED_OWNER_PASSWORD ?? "Editex132.";
+  const passwordHash = await hashPassword(ownerPassword);
 
   const owner = await prisma.user.upsert({
     where: { email: ownerEmail },
-    update: {},
+    update: {
+      passwordHash,
+      status: UserStatus.ACTIVE,
+    },
     create: {
       email: ownerEmail,
-      passwordHash: await hashPassword(ownerPassword),
+      passwordHash,
       displayName: "Owner",
       fullName: "Agency Owner",
       role: Role.OWNER,
@@ -58,6 +62,19 @@ async function main() {
       create: resource,
     });
   }
+
+  await prisma.systemConfig.upsert({
+    where: { id: "default" },
+    update: {
+      assignmentMode: SystemAssignmentMode.AUTOMATIC,
+      darkModeEnabled: true,
+    },
+    create: {
+      id: "default",
+      assignmentMode: SystemAssignmentMode.AUTOMATIC,
+      darkModeEnabled: true,
+    },
+  });
 
   console.log(`Seed completed. Owner id: ${owner.id}`);
 }

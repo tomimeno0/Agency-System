@@ -13,6 +13,7 @@ enum Role {
 }
 
 enum UserStatus {
+  PENDING_APPROVAL
   ACTIVE
   INACTIVE
   LOCKED
@@ -50,6 +51,25 @@ enum AssignmentStatus {
   ACCEPTED
   REJECTED
   COMPLETED
+  CANCELLED
+  EXPIRED
+}
+
+enum AssignmentMode {
+  AUTOMATIC
+  MANUAL
+}
+
+enum TaskAssignmentFlowStatus {
+  PENDING_OFFER
+  ACCEPTED
+  REJECTED
+  DIVIDED
+}
+
+enum SystemAssignmentMode {
+  AUTOMATIC
+  MANUAL
 }
 
 enum SubmissionStatus {
@@ -117,6 +137,10 @@ model User {
   failedLoginAttempts Int      @default(0)
   lockUntil           DateTime?
   lastLoginAt         DateTime?
+  workloadScore       Int      @default(0)
+  acceptedOffersCount Int      @default(0)
+  totalOffersCount    Int      @default(0)
+  acceptanceRate      Float    @default(0)
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
@@ -137,6 +161,7 @@ model User {
   taskStatusChanges   TaskStatusHistory[] @relation("TaskStatusChangedBy")
   integrationSecrets  IntegrationSecret[] @relation("IntegrationSecretCreatedBy")
   learningProgress    LearningProgress[]
+  directlyAssignedTasks Task[]            @relation("TaskDirectEditor")
 }
 
 model Client {
@@ -159,6 +184,7 @@ model Client {
 
   createdBy       User        @relation("ClientCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
   projects        Project[]
+  tasks           Task[]
   payments        Payment[]
 
   @@index([createdById])
@@ -189,7 +215,9 @@ model Project {
 
 model Task {
   id                       String       @id @default(cuid())
-  projectId                String
+  projectId                String?
+  clientId                 String?
+  directEditorId           String?
   title                    String
   description              String?
   instructions             String?
@@ -198,18 +226,35 @@ model Task {
   estimatedDurationMinutes Int?
   state                    TaskState    @default(DRAFT)
   assignedMode             String       @default("manual")
+  assignmentMode           AssignmentMode @default(MANUAL)
+  assignmentFlowStatus     TaskAssignmentFlowStatus @default(PENDING_OFFER)
+  offerExpiresAt           DateTime?
+  offeredEditorIds         String[]
+  assignmentAttempt        Int          @default(0)
+  parentTaskId             String?
+  totalVideos              Int?
+  splitChunkSize           Int?         @default(10)
   createdById              String
   createdAt                DateTime     @default(now())
   updatedAt                DateTime     @updatedAt
 
-  project                  Project      @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  project                  Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  client                   Client?      @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  directEditor             User?        @relation("TaskDirectEditor", fields: [directEditorId], references: [id], onDelete: SetNull)
   createdBy                User         @relation("TaskCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  parentTask               Task?        @relation("TaskParent", fields: [parentTaskId], references: [id], onDelete: SetNull)
+  childTasks               Task[]       @relation("TaskParent")
   assignments              TaskAssignment[]
   statusHistory            TaskStatusHistory[]
   files                    TaskFile[]
 
   @@index([projectId])
+  @@index([clientId])
+  @@index([directEditorId])
   @@index([state])
+  @@index([assignmentFlowStatus])
+  @@index([offerExpiresAt])
+  @@index([parentTaskId])
   @@index([deadlineAt])
 }
 
@@ -224,6 +269,9 @@ model TaskAssignment {
   completedAt      DateTime?
   percentageOfTask Decimal          @db.Decimal(5, 2) @default(100)
   rejectionReason  String?
+  offerExpiresAt   DateTime?
+  offerRound       Int              @default(0)
+  autoCancelledAt  DateTime?
 
   task             Task             @relation(fields: [taskId], references: [id], onDelete: Restrict)
   editor           User             @relation("AssignmentEditor", fields: [editorId], references: [id], onDelete: Restrict)
@@ -479,4 +527,12 @@ model VerificationToken {
   expires    DateTime
 
   @@unique([identifier, token])
+}
+
+model SystemConfig {
+  id             String               @id @default("default")
+  assignmentMode SystemAssignmentMode @default(AUTOMATIC)
+  darkModeEnabled Boolean             @default(true)
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
 }

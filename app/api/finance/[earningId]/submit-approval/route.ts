@@ -8,8 +8,8 @@ import { appendAuditLog, requestMeta } from "@/lib/services/audit";
 
 export const POST = defineRoute(async (request, context, requestId) => {
   const actor = await requireSessionUser();
-  if (actor.role === Role.EDITOR) {
-    forbidden("Editor cannot submit earnings for approval");
+  if (actor.role !== Role.OWNER) {
+    forbidden("Solo owner puede enviar finanzas a aprobacion");
   }
 
   const { earningId } = await context.params;

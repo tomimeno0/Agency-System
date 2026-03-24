@@ -63,7 +63,7 @@ export const POST = defineRoute(async (request, _context, requestId) => {
       assignmentId: payload.assignmentId,
       uploadedById: actor.id,
       storageKey: payload.storageKey,
-      bucket: env.R2_BUCKET,
+      bucket: env.STORAGE_PROVIDER === "local" ? "local" : (env.R2_BUCKET ?? "r2"),
       originalName: payload.originalName,
       mimeType: payload.mimeType,
       sizeBytes: payload.sizeBytes,

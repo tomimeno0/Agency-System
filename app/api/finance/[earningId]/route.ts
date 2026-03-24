@@ -7,6 +7,9 @@ import { requireSessionUser } from "@/lib/auth/session";
 
 export const GET = defineRoute(async (_request, context, requestId) => {
   const actor = await requireSessionUser();
+  if (actor.role !== Role.OWNER) {
+    forbidden("Solo owner puede acceder a finanzas");
+  }
   const { earningId } = await context.params;
 
   const earning = await prisma.editorEarning.findUniqueOrThrow({
@@ -33,10 +36,6 @@ export const GET = defineRoute(async (_request, context, requestId) => {
       },
     },
   });
-
-  if (actor.role === Role.EDITOR && earning.editorId !== actor.id) {
-    forbidden("Editor can only access own earnings");
-  }
 
   return ok(earning, requestId);
 });

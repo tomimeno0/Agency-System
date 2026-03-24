@@ -22,7 +22,7 @@ function mapClient<T extends { phoneEncrypted: string | null; notesEncrypted: st
 
 export const GET = defineRoute(async (request, _context, requestId) => {
   const actor = await requireSessionUser();
-  requireRole(actor, [Role.OWNER, Role.ADMIN]);
+  requireRole(actor, [Role.OWNER]);
 
   const { take, skip } = getPagination(request);
   const clients = await prisma.client.findMany({
@@ -36,7 +36,7 @@ export const GET = defineRoute(async (request, _context, requestId) => {
 
 export const POST = defineRoute(async (request, _context, requestId) => {
   const actor = await requireSessionUser();
-  requireRole(actor, [Role.OWNER, Role.ADMIN]);
+  requireRole(actor, [Role.OWNER]);
 
   const payload = clientCreateSchema.parse(await parseJson(request));
   const encryptedPhone = payload.phone ? encryptField(payload.phone) : null;

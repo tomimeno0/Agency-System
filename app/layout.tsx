@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+﻿import type { Metadata } from "next";
 import { JetBrains_Mono, Space_Grotesk } from "next/font/google";
 import "./globals.css";
 
@@ -13,8 +13,8 @@ const monoFont = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "AgencyOS",
-  description: "Plataforma interna de operación para agencia de edición.",
+  title: "EDITEX STUDIO",
+  description: "Video Editing Agency",
 };
 
 export default function RootLayout({

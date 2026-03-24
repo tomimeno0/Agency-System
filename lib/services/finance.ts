@@ -1,5 +1,6 @@
 import { PaymentStatus, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { env } from "@/lib/env";
 import { notFound, unprocessable } from "@/lib/http/errors";
 
 function toMoney(value: number): Prisma.Decimal {
@@ -18,6 +19,7 @@ export async function calculateEarningForAssignment(input: {
       task: {
         include: {
           project: true,
+          client: true,
         },
       },
     },
@@ -31,12 +33,15 @@ export async function calculateEarningForAssignment(input: {
     unprocessable("editorPercentage + agencyPercentage cannot exceed 100");
   }
 
-  if (assignment.task.project.packSize <= 0) {
-    unprocessable("Project packSize must be greater than zero");
+  const packPriceRaw = assignment.task.project?.packPrice ?? assignment.task.client?.packPrice;
+  const packSizeRaw = assignment.task.project?.packSize ?? assignment.task.client?.packSize;
+  const packSize = packSizeRaw ?? 0;
+
+  if (!packPriceRaw || packSize <= 0) {
+    unprocessable("Task requires client/project packPrice and packSize greater than zero");
   }
 
-  const packPrice = Number(assignment.task.project.packPrice);
-  const packSize = assignment.task.project.packSize;
+  const packPrice = Number(packPriceRaw);
   const baseValue = packPrice / packSize;
 
   const assignmentPercentage = Number(assignment.percentageOfTask) / 100;
@@ -56,7 +61,7 @@ export async function calculateEarningForAssignment(input: {
       grossAmount: toMoney(grossAmount),
       agencyCommissionAmount: toMoney(agencyCommissionAmount),
       editorNetAmount: toMoney(editorNetAmount),
-      currency: input.currency ?? assignment.task.project.currency,
+      currency: input.currency ?? assignment.task.project?.currency ?? env.DEFAULT_CURRENCY,
       status: PaymentStatus.CALCULATED,
       calculatedAt: new Date(),
     },
@@ -68,7 +73,7 @@ export async function calculateEarningForAssignment(input: {
       grossAmount: toMoney(grossAmount),
       agencyCommissionAmount: toMoney(agencyCommissionAmount),
       editorNetAmount: toMoney(editorNetAmount),
-      currency: input.currency ?? assignment.task.project.currency,
+      currency: input.currency ?? assignment.task.project?.currency ?? env.DEFAULT_CURRENCY,
       status: PaymentStatus.CALCULATED,
       calculatedAt: new Date(),
       submittedForApprovalAt: null,

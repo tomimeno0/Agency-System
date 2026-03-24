@@ -21,6 +21,20 @@ export const GET = defineRoute(async (_request, context, requestId) => {
           clientId: true,
         },
       },
+      client: {
+        select: {
+          id: true,
+          name: true,
+          brandName: true,
+        },
+      },
+      directEditor: {
+        select: {
+          id: true,
+          displayName: true,
+          role: true,
+        },
+      },
       assignments: {
         include: {
           editor: {
@@ -62,12 +76,18 @@ export const PATCH = defineRoute(async (request, context, requestId) => {
     where: { id: taskId },
     data: {
       title: payload.title,
+      projectId: payload.projectId,
+      clientId: payload.clientId,
+      directEditorId: payload.directEditorId,
       description: payload.description,
       instructions: payload.instructions,
       deadlineAt: payload.deadlineAt ? new Date(payload.deadlineAt) : undefined,
       priority: payload.priority,
       estimatedDurationMinutes: payload.estimatedDurationMinutes,
       assignedMode: payload.assignedMode,
+      assignmentMode: payload.assignmentMode,
+      totalVideos: payload.totalVideos,
+      splitChunkSize: payload.splitChunkSize,
     },
   });
 

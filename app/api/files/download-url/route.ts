@@ -48,6 +48,8 @@ export const POST = defineRoute(async (request, _context, requestId) => {
 
   const downloadUrl = await createSignedDownloadUrl({
     storageKey: file.storageKey,
+    mimeType: file.mimeType,
+    fileName: file.originalName,
     expiresInSeconds: 300,
   });
 
