@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { AssignmentMode, TaskPriority, TaskState } from "@prisma/client";
+import { useMemo, useState } from "react";
 
 type ClientOption = {
   id: string;
@@ -21,21 +22,31 @@ type CreatedTask = {
 export function TaskCreator({
   clients,
   editors,
+  initialEditorId,
 }: {
   clients: ClientOption[];
   editors: EditorOption[];
+  initialEditorId?: string;
 }) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [instructions, setInstructions] = useState("");
   const [clientId, setClientId] = useState("");
-  const [editorId, setEditorId] = useState("");
+  const [editorId, setEditorId] = useState(initialEditorId ?? "");
+  const [deadlineAt, setDeadlineAt] = useState("");
+  const [priority, setPriority] = useState<TaskPriority>(TaskPriority.MEDIUM);
+  const [assignmentMode, setAssignmentMode] = useState<AssignmentMode>(AssignmentMode.MANUAL);
+  const [totalVideos, setTotalVideos] = useState("");
   const [files, setFiles] = useState<FileList | null>(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const hasDirectEditor = useMemo(() => Boolean(editorId), [editorId]);
+
   async function createTask(): Promise<CreatedTask> {
+    const initialState = hasDirectEditor ? TaskState.OFFERED : TaskState.PENDING_ASSIGNMENT;
+
     const response = await fetch("/api/tasks", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -45,13 +56,17 @@ export function TaskCreator({
         instructions: instructions || undefined,
         clientId: clientId || undefined,
         directEditorId: editorId || undefined,
-        assignmentMode: "MANUAL",
-        assignedMode: "manual",
+        assignmentMode,
+        assignedMode: assignmentMode === AssignmentMode.AUTOMATIC ? "offered" : "manual",
+        state: initialState,
+        priority,
+        deadlineAt: deadlineAt ? new Date(deadlineAt).toISOString() : undefined,
+        totalVideos: totalVideos ? Number(totalVideos) : undefined,
       }),
     });
 
     if (!response.ok) {
-      throw new Error("No se pudo crear la task");
+      throw new Error("No se pudo crear la task.");
     }
 
     const payload = (await response.json()) as { data: CreatedTask };
@@ -69,9 +84,8 @@ export function TaskCreator({
         sizeBytes: file.size,
       }),
     });
-
     if (!uploadUrlResponse.ok) {
-      throw new Error(`No se pudo generar URL de subida para ${file.name}`);
+      throw new Error(`No se pudo generar URL de subida para ${file.name}.`);
     }
 
     const uploadPayload = (await uploadUrlResponse.json()) as {
@@ -83,9 +97,10 @@ export function TaskCreator({
       headers: { "Content-Type": file.type || "application/octet-stream" },
       body: file,
     });
-
     if (!putResponse.ok) {
-      throw new Error(`No se pudo subir el archivo ${file.name}`);
+      throw new Error(
+        `No se pudo subir ${file.name}. Si no usas Cloudflare, configura STORAGE_PROVIDER=local en .env.`,
+      );
     }
 
     const finalizeResponse = await fetch("/api/files/finalize", {
@@ -99,17 +114,25 @@ export function TaskCreator({
         sizeBytes: file.size,
       }),
     });
-
     if (!finalizeResponse.ok) {
-      throw new Error(`No se pudo finalizar el archivo ${file.name}`);
+      throw new Error(`No se pudo registrar el archivo ${file.name}.`);
     }
   }
 
   async function onSubmit() {
     setError(null);
     setMessage(null);
-    setLoading(true);
 
+    if (!title.trim()) {
+      setError("El titulo es obligatorio.");
+      return;
+    }
+    if (!deadlineAt) {
+      setError("El deadline es obligatorio para operar tareas.");
+      return;
+    }
+
+    setLoading(true);
     try {
       const createdTask = await createTask();
       if (files && files.length > 0) {
@@ -123,9 +146,12 @@ export function TaskCreator({
       setInstructions("");
       setClientId("");
       setEditorId("");
+      setDeadlineAt("");
+      setPriority(TaskPriority.MEDIUM);
+      setTotalVideos("");
       setFiles(null);
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "Error creando la task");
+      setError(submitError instanceof Error ? submitError.message : "Error creando la task.");
     } finally {
       setLoading(false);
     }
@@ -133,14 +159,14 @@ export function TaskCreator({
 
   return (
     <main>
-      <h1 className="mb-4 text-2xl font-semibold">Crear Task</h1>
-      <div className="rounded-xl bg-[#111827] p-4">
+      <h1 className="mb-4 text-2xl font-semibold">Crear task</h1>
+      <div className="rounded-xl border border-zinc-800 bg-[#111827] p-4">
         <div className="grid gap-3 md:grid-cols-2">
           <input
             value={title}
             onChange={(event) => setTitle(event.target.value)}
             className="rounded-md border border-zinc-700 bg-[#0b0f14] px-3 py-2 text-sm"
-            placeholder="Titulo de la task"
+            placeholder="Titulo"
           />
           <select
             value={clientId}
@@ -154,6 +180,7 @@ export function TaskCreator({
               </option>
             ))}
           </select>
+
           <select
             value={editorId}
             onChange={(event) => setEditorId(event.target.value)}
@@ -166,19 +193,57 @@ export function TaskCreator({
               </option>
             ))}
           </select>
+
+          <input
+            type="datetime-local"
+            value={deadlineAt}
+            onChange={(event) => setDeadlineAt(event.target.value)}
+            className="rounded-md border border-zinc-700 bg-[#0b0f14] px-3 py-2 text-sm"
+          />
+
+          <select
+            value={priority}
+            onChange={(event) => setPriority(event.target.value as TaskPriority)}
+            className="rounded-md border border-zinc-700 bg-[#0b0f14] px-3 py-2 text-sm"
+          >
+            <option value={TaskPriority.LOW}>Prioridad baja</option>
+            <option value={TaskPriority.MEDIUM}>Prioridad media</option>
+            <option value={TaskPriority.HIGH}>Prioridad alta</option>
+            <option value={TaskPriority.URGENT}>Prioridad urgente</option>
+          </select>
+
+          <select
+            value={assignmentMode}
+            onChange={(event) => setAssignmentMode(event.target.value as AssignmentMode)}
+            className="rounded-md border border-zinc-700 bg-[#0b0f14] px-3 py-2 text-sm"
+          >
+            <option value={AssignmentMode.MANUAL}>Asignacion manual</option>
+            <option value={AssignmentMode.AUTOMATIC}>Asignacion automatica</option>
+          </select>
+
+          <input
+            value={totalVideos}
+            onChange={(event) => setTotalVideos(event.target.value)}
+            type="number"
+            min={1}
+            className="rounded-md border border-zinc-700 bg-[#0b0f14] px-3 py-2 text-sm"
+            placeholder="Total videos (opcional)"
+          />
+
           <input
             type="file"
             multiple
             onChange={(event) => setFiles(event.target.files)}
-            className="rounded-md border border-zinc-700 bg-[#0b0f14] px-3 py-2 text-sm"
+            className="rounded-md border border-zinc-700 bg-[#0b0f14] px-3 py-2 text-sm md:col-span-2"
           />
         </div>
+
         <textarea
           value={description}
           onChange={(event) => setDescription(event.target.value)}
           className="mt-3 w-full rounded-md border border-zinc-700 bg-[#0b0f14] px-3 py-2 text-sm"
           rows={3}
-          placeholder="Descripcion"
+          placeholder="Descripcion breve"
         />
         <textarea
           value={instructions}
@@ -188,10 +253,16 @@ export function TaskCreator({
           placeholder="Instrucciones detalladas"
         />
 
+        <p className="mt-2 text-xs text-zinc-400">
+          {hasDirectEditor
+            ? "Se crea con editor preasignado y queda lista para confirmar o trabajar."
+            : "Se crea sin editor y queda en asignacion pendiente."}
+        </p>
+
         <button
           type="button"
           onClick={onSubmit}
-          disabled={loading || !title.trim()}
+          disabled={loading}
           className="mt-3 rounded-md border border-zinc-700 bg-zinc-900 px-4 py-2 text-sm font-medium hover:bg-zinc-800 disabled:opacity-60"
         >
           {loading ? "Creando..." : "Crear task"}

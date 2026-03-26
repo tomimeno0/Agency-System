@@ -5,12 +5,14 @@ import { authOptions } from "@/lib/auth/options";
 import { prisma } from "@/lib/db";
 import { TaskCreator } from "./task-creator";
 
-export default async function NewTaskPage() {
+type SearchParams = Promise<Record<string, string | string[] | undefined>>;
+
+export default async function NewTaskPage({ searchParams }: { searchParams: SearchParams }) {
   const session = await getServerSession(authOptions);
   if (!session?.user) {
     redirect("/login");
   }
-  if (session.user.role !== Role.OWNER) {
+  if (session.user.role === Role.EDITOR) {
     redirect("/dashboard/tasks");
   }
 
@@ -28,5 +30,8 @@ export default async function NewTaskPage() {
     }),
   ]);
 
-  return <TaskCreator clients={clients} editors={editors} />;
+  const query = await searchParams;
+  const initialEditorId = Array.isArray(query.editorId) ? query.editorId[0] : query.editorId;
+
+  return <TaskCreator clients={clients} editors={editors} initialEditorId={initialEditorId ?? ""} />;
 }

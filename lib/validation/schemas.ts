@@ -1,5 +1,7 @@
 import {
   AssignmentStatus,
+  FinancialMovementStatus,
+  FinancialMovementType,
   AssignmentMode,
   LearningLevel,
   LearningProgressStatus,
@@ -31,6 +33,8 @@ export const paymentStatusSchema = z.nativeEnum(PaymentStatus);
 export const notificationStatusSchema = z.nativeEnum(NotificationStatus);
 export const learningLevelSchema = z.nativeEnum(LearningLevel);
 export const learningProgressStatusSchema = z.nativeEnum(LearningProgressStatus);
+export const financialMovementTypeSchema = z.nativeEnum(FinancialMovementType);
+export const financialMovementStatusSchema = z.nativeEnum(FinancialMovementStatus);
 
 const passwordPolicySchema = z
   .string()
@@ -133,6 +137,25 @@ export const financeCalculateSchema = z.object({
   taskAssignmentId: cuidSchema,
   editorPercentage: z.number().positive().max(100),
   agencyPercentage: z.number().positive().max(100),
+});
+
+export const financialMovementCreateSchema = z.object({
+  type: financialMovementTypeSchema,
+  subtype: z.string().max(120).optional(),
+  amount: z.number().positive(),
+  occurredAt: z.string().datetime().optional(),
+  description: z.string().min(2).max(300),
+  method: z.string().max(80).optional(),
+  notes: z.string().max(2000).optional(),
+  clientId: cuidSchema.optional(),
+  taskId: cuidSchema.optional(),
+  status: financialMovementStatusSchema.default(FinancialMovementStatus.CONFIRMED),
+});
+
+export const financialMovementUpdateSchema = financialMovementCreateSchema.partial();
+
+export const workerNoteCreateSchema = z.object({
+  content: z.string().min(2).max(1000),
 });
 
 export const uploadUrlSchema = z.object({

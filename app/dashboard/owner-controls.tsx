@@ -4,9 +4,10 @@ import { useState } from "react";
 
 type OwnerControlsProps = {
   assignmentMode: "AUTOMATIC" | "MANUAL";
+  pendingManualInterventions: number;
 };
 
-export function OwnerControls({ assignmentMode }: OwnerControlsProps) {
+export function OwnerControls({ assignmentMode, pendingManualInterventions }: OwnerControlsProps) {
   const [mode, setMode] = useState<"AUTOMATIC" | "MANUAL">(assignmentMode);
   const [saving, setSaving] = useState(false);
 
@@ -29,7 +30,15 @@ export function OwnerControls({ assignmentMode }: OwnerControlsProps) {
 
   return (
     <div className="rounded-xl border border-zinc-800 bg-[#111827] p-4">
-      <p className="text-xs uppercase tracking-wide text-zinc-400">Assignment mode</p>
+      <p className="text-xs uppercase tracking-wide text-zinc-400">Modo de asignacion</p>
+      <p className="mt-1 text-sm text-zinc-300">
+        {mode === "AUTOMATIC" ? "Modo automatico activo" : "Modo manual activo"}
+      </p>
+      <p className="mt-1 text-xs text-zinc-400">
+        {pendingManualInterventions > 0
+          ? `${pendingManualInterventions} tareas requieren intervencion manual`
+          : "No hay tareas bloqueadas por asignacion"}
+      </p>
       <div className="mt-3 flex gap-2">
         <button
           type="button"
@@ -41,7 +50,7 @@ export function OwnerControls({ assignmentMode }: OwnerControlsProps) {
               : "border border-zinc-700 bg-zinc-950 text-zinc-300 hover:border-zinc-500"
           }`}
         >
-          Automatic
+          Automatico
         </button>
 
         <button

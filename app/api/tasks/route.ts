@@ -125,8 +125,8 @@ export const GET = defineRoute(async (request, _context, requestId) => {
 
 export const POST = defineRoute(async (request, _context, requestId) => {
   const actor = await requireSessionUser();
-  if (actor.role !== Role.OWNER) {
-    forbidden("Solo owner puede crear tasks");
+  if (actor.role === Role.EDITOR) {
+    forbidden("Solo owner/admin pueden crear tasks");
   }
 
   const payload = taskCreateSchema.parse(await parseJson(request));
@@ -136,6 +136,18 @@ export const POST = defineRoute(async (request, _context, requestId) => {
     (systemConfig.assignmentMode === "AUTOMATIC"
       ? AssignmentMode.AUTOMATIC
       : AssignmentMode.MANUAL);
+  const requestedState = payload.state;
+
+  let nextState = requestedState;
+  if (requestedState === "DRAFT" && !payload.directEditorId) {
+    nextState = "PENDING_ASSIGNMENT";
+  }
+  if (requestedState === "DRAFT" && payload.directEditorId) {
+    nextState = "OFFERED";
+  }
+  if (assignmentMode === AssignmentMode.AUTOMATIC && requestedState === "DRAFT") {
+    nextState = "PENDING_ASSIGNMENT";
+  }
 
   const task = await prisma.$transaction(async (tx) => {
     const createdTask = await tx.task.create({
@@ -150,12 +162,7 @@ export const POST = defineRoute(async (request, _context, requestId) => {
         priority: payload.priority,
         estimatedDurationMinutes: payload.estimatedDurationMinutes,
         assignedMode: payload.assignedMode,
-        state:
-          assignmentMode === AssignmentMode.AUTOMATIC
-            ? payload.state === "DRAFT"
-              ? "PENDING_ASSIGNMENT"
-              : payload.state
-            : payload.state,
+        state: nextState,
         assignmentMode,
         assignmentFlowStatus: "PENDING_OFFER",
         totalVideos: payload.totalVideos,
@@ -170,7 +177,7 @@ export const POST = defineRoute(async (request, _context, requestId) => {
         fromState: null,
         toState: createdTask.state,
         changedById: actor.id,
-        comment: "Task created",
+        comment: "Task creada",
       },
     });
 

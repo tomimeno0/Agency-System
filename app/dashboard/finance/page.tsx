@@ -1,65 +1,61 @@
-import { Role } from "@prisma/client";
+import { PaymentStatus, Role } from "@prisma/client";
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
-import { fetchApiItems } from "@/app/dashboard/_lib/api";
 import { authOptions } from "@/lib/auth/options";
-
-type EarningRow = {
-  id: string;
-  editorNetAmount: string;
-  agencyCommissionAmount: string;
-  status: string;
-  editor: {
-    displayName: string | null;
-  } | null;
-  taskAssignment: {
-    taskId: string;
-    percentageOfTask: string;
-  } | null;
-};
+import { prisma } from "@/lib/db";
+import { FinanceManager } from "./finance-manager";
 
 export default async function FinancePage() {
   const session = await getServerSession(authOptions);
-  if (!session?.user) {
-    redirect("/login");
-  }
-  if (session.user.role !== Role.OWNER) {
-    redirect("/dashboard");
-  }
+  if (!session?.user) redirect("/login");
+  if (session.user.role !== Role.OWNER) redirect("/dashboard");
 
-  const ledger = await fetchApiItems<EarningRow>("/api/finance");
+  const [movements, clients, tasks, pendingApprovals] = await Promise.all([
+    prisma.financialMovement.findMany({
+      include: {
+        client: { select: { id: true, name: true, brandName: true } },
+        task: { select: { id: true, title: true } },
+      },
+      orderBy: { occurredAt: "desc" },
+      take: 2000,
+    }),
+    prisma.client.findMany({
+      select: { id: true, name: true, brandName: true },
+      orderBy: { createdAt: "desc" },
+      take: 400,
+    }),
+    prisma.task.findMany({
+      select: { id: true, title: true },
+      orderBy: { createdAt: "desc" },
+      take: 400,
+    }),
+    prisma.editorEarning.count({ where: { status: PaymentStatus.PENDING_OWNER_APPROVAL } }),
+  ]);
 
   return (
-    <main>
-      <h1 className="mb-4 text-2xl font-semibold">Financial Manager</h1>
-      <div className="overflow-hidden rounded-xl bg-[#111827]">
-        {ledger.length === 0 ? (
-          <p className="p-4 text-sm text-zinc-300">No data yet</p>
-        ) : (
-          <table className="w-full text-left text-sm">
-            <thead className="border-b border-zinc-700 text-zinc-300">
-              <tr>
-                <th className="px-4 py-3 font-medium">Editor</th>
-                <th className="px-4 py-3 font-medium">Task</th>
-                <th className="px-4 py-3 font-medium">Editor Net</th>
-                <th className="px-4 py-3 font-medium">Agency Commission</th>
-                <th className="px-4 py-3 font-medium">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {ledger.map((item) => (
-                <tr key={item.id} className="border-b border-zinc-800">
-                  <td className="px-4 py-3">{item.editor?.displayName ?? "-"}</td>
-                  <td className="px-4 py-3">{item.taskAssignment?.taskId ?? "-"}</td>
-                  <td className="px-4 py-3">{item.editorNetAmount}</td>
-                  <td className="px-4 py-3">{item.agencyCommissionAmount}</td>
-                  <td className="px-4 py-3">{item.status}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
-    </main>
+    <FinanceManager
+      initialMovements={movements.map((item) => ({
+        id: item.id,
+        type: item.type,
+        status: item.status,
+        subtype: item.subtype,
+        amount: Number(item.amount),
+        currency: item.currency,
+        occurredAt: item.occurredAt.toISOString(),
+        description: item.description,
+        method: item.method,
+        notes: item.notes,
+        clientId: item.clientId,
+        clientName: item.client?.brandName ?? item.client?.name ?? null,
+        taskId: item.taskId,
+        taskTitle: item.task?.title ?? null,
+      }))}
+      clients={clients.map((client) => ({
+        id: client.id,
+        name: client.brandName ?? client.name,
+      }))}
+      tasks={tasks}
+      pendingApprovals={pendingApprovals}
+    />
   );
 }

@@ -27,7 +27,7 @@ function mapClient(client: {
 
 export const GET = defineRoute(async (_request, context, requestId) => {
   const actor = await requireSessionUser();
-  requireRole(actor, [Role.OWNER]);
+  requireRole(actor, [Role.OWNER, Role.ADMIN]);
 
   const { clientId } = await context.params;
   const client = await prisma.client.findUniqueOrThrow({ where: { id: clientId } });

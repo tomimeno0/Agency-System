@@ -19,7 +19,6 @@ export default function SecurityPage() {
     });
 
     setLoading(null);
-
     if (!response.ok) {
       setError("No se pudieron revocar las sesiones.");
       return;
@@ -32,8 +31,8 @@ export default function SecurityPage() {
   return (
     <main>
       <h1 className="mb-4 text-2xl font-semibold">Seguridad</h1>
-      <div className="rounded-xl bg-[#111827] p-4">
-        <p className="mb-4 text-sm text-zinc-300">Gestioná tus sesiones activas.</p>
+      <div className="rounded-xl border border-zinc-800 bg-[#111827] p-4">
+        <p className="mb-4 text-sm text-zinc-300">Gestiona tus sesiones activas.</p>
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
@@ -41,7 +40,7 @@ export default function SecurityPage() {
             disabled={loading !== null}
             className="rounded-md border border-zinc-700 px-3 py-2 text-sm hover:bg-zinc-800 disabled:opacity-60"
           >
-            {loading === "current" ? "Procesando..." : "Cerrar sesión actual"}
+            {loading === "current" ? "Procesando..." : "Cerrar sesion actual"}
           </button>
           <button
             type="button"

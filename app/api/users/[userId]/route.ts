@@ -70,3 +70,51 @@ export const PATCH = defineRoute(async (request, context, requestId) => {
 
   return ok(updated, requestId);
 });
+
+export const DELETE = defineRoute(async (request, context, requestId) => {
+  const actor = await requireSessionUser();
+  requireRole(actor, [Role.OWNER, Role.ADMIN]);
+
+  const { userId } = await context.params;
+  if (actor.id === userId) {
+    forbidden("No podes eliminar tu propia cuenta");
+  }
+
+  const target = await prisma.user.findUniqueOrThrow({
+    where: { id: userId },
+    select: { id: true, role: true, email: true },
+  });
+
+  if (actor.role === Role.ADMIN && target.role !== Role.EDITOR) {
+    forbidden("Admin solo puede eliminar cuentas editor");
+  }
+  if (target.role === Role.OWNER && actor.role !== Role.OWNER) {
+    forbidden("Solo owner puede eliminar otra cuenta owner");
+  }
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: {
+      status: "INACTIVE",
+      displayName: `Deleted ${target.id.slice(0, 6)}`,
+      fullName: null,
+      avatarUrl: null,
+      country: null,
+      availabilityText: null,
+      email: `deleted+${target.id}@deleted.local`,
+    },
+  });
+
+  const { ip, userAgent } = requestMeta(request);
+  await appendAuditLog({
+    actorUserId: actor.id,
+    action: "users.deleted_logical",
+    entityType: "User",
+    entityId: userId,
+    metadataJson: { previousEmail: target.email, role: target.role },
+    ip,
+    userAgent,
+  });
+
+  return ok({ id: userId, deleted: true }, requestId);
+});
