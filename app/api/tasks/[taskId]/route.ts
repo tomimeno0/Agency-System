@@ -104,3 +104,79 @@ export const PATCH = defineRoute(async (request, context, requestId) => {
 
   return ok(updated, requestId);
 });
+
+export const DELETE = defineRoute(async (request, context, requestId) => {
+  const actor = await requireSessionUser();
+  if (actor.role !== Role.OWNER) {
+    forbidden("Only owner can delete tasks");
+  }
+
+  const { taskId } = await context.params;
+
+  const existing = await prisma.task.findUnique({
+    where: { id: taskId },
+    select: { id: true },
+  });
+  if (!existing) {
+    return ok({ deleted: false, reason: "not_found" }, requestId);
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.review.deleteMany({
+      where: {
+        submission: {
+          taskAssignment: {
+            taskId,
+          },
+        },
+      },
+    });
+
+    await tx.submission.deleteMany({
+      where: {
+        taskAssignment: {
+          taskId,
+        },
+      },
+    });
+
+    await tx.editorEarning.deleteMany({
+      where: {
+        taskAssignment: {
+          taskId,
+        },
+      },
+    });
+
+    await tx.taskAssignment.deleteMany({
+      where: { taskId },
+    });
+
+    await tx.taskFile.updateMany({
+      where: { taskId },
+      data: { taskId: null },
+    });
+
+    await tx.financialMovement.updateMany({
+      where: { taskId },
+      data: { taskId: null },
+    });
+
+    await tx.task.delete({
+      where: { id: taskId },
+    });
+  });
+
+  const { ip, userAgent } = requestMeta(request);
+  await appendAuditLog({
+    actorUserId: actor.id,
+    action: "tasks.delete",
+    entityType: "Task",
+    entityId: taskId,
+    metadataJson: { hardDelete: true },
+    ip,
+    userAgent,
+  });
+
+  return ok({ deleted: true }, requestId);
+});

@@ -1,10 +1,11 @@
-import { AssignmentStatus, Role, TaskPriority } from "@prisma/client";
+import { AssignmentStatus, Role, TaskPriority, TaskState } from "@prisma/client";
 import { getServerSession } from "next-auth";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth/options";
 import { prisma } from "@/lib/db";
 import { isCompletedState, toHumanPriority, toHumanTaskStage } from "@/lib/presentation/tasks";
+import { TaskRowActions } from "./task-row-actions";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
@@ -145,27 +146,27 @@ export default async function TasksPage({ searchParams }: { searchParams: Search
     });
 
   return (
-    <main>
+    <main className="w-full">
       <div className="mb-4 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold">{actor.role === Role.EDITOR ? "Mis tasks" : "Tasks"}</h1>
-          <p className="text-sm text-zinc-400">Control de flujo con filtros operativos</p>
+          <h1 className="text-3xl font-semibold">{actor.role === Role.EDITOR ? "Mis tasks" : "Tasks"}</h1>
+          <p className="text-base text-zinc-400">Control de flujo con filtros operativos</p>
         </div>
         {actor.role !== Role.EDITOR ? (
           <Link
             href="/dashboard/tasks/new"
-            className="rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm hover:bg-zinc-800"
+            className="rounded-md border border-zinc-700 bg-zinc-900 px-4 py-2.5 text-base hover:bg-zinc-800"
           >
             Crear task
           </Link>
         ) : null}
       </div>
 
-      <form className="mb-4 grid gap-2 rounded-xl border border-zinc-800 bg-[#111827] p-3 md:grid-cols-6">
+      <form className="mb-5 grid gap-2 rounded-xl border border-zinc-800 bg-[#111827] p-4 md:grid-cols-6">
         <select
           name="estado"
           defaultValue={estado}
-          className="rounded-md border border-zinc-700 bg-[#0b0f14] px-3 py-2 text-sm"
+          className="h-11 rounded-md border border-zinc-700 bg-[#0b0f14] px-3 text-base"
         >
           <option value="todos">Estado: todos</option>
           <option value="activas">Activas</option>
@@ -178,7 +179,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Search
         <select
           name="prioridad"
           defaultValue={prioridad}
-          className="rounded-md border border-zinc-700 bg-[#0b0f14] px-3 py-2 text-sm"
+          className="h-11 rounded-md border border-zinc-700 bg-[#0b0f14] px-3 text-base"
         >
           <option value="todos">Prioridad: todas</option>
           <option value="alta">Alta</option>
@@ -188,7 +189,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Search
         <select
           name="cliente"
           defaultValue={clienteFiltro}
-          className="rounded-md border border-zinc-700 bg-[#0b0f14] px-3 py-2 text-sm"
+          className="h-11 rounded-md border border-zinc-700 bg-[#0b0f14] px-3 text-base"
         >
           <option value="todos">Cliente: todos</option>
           {clients.map((client) => (
@@ -200,7 +201,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Search
         <select
           name="editor"
           defaultValue={editorFiltro}
-          className="rounded-md border border-zinc-700 bg-[#0b0f14] px-3 py-2 text-sm"
+          className="h-11 rounded-md border border-zinc-700 bg-[#0b0f14] px-3 text-base"
         >
           <option value="todos">Editor: todos</option>
           {editors.map((editor) => (
@@ -212,7 +213,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Search
         <select
           name="deadline"
           defaultValue={deadlineFiltro}
-          className="rounded-md border border-zinc-700 bg-[#0b0f14] px-3 py-2 text-sm"
+          className="h-11 rounded-md border border-zinc-700 bg-[#0b0f14] px-3 text-base"
         >
           <option value="todos">Deadline: todos</option>
           <option value="hoy">Hoy</option>
@@ -223,13 +224,13 @@ export default async function TasksPage({ searchParams }: { searchParams: Search
         <div className="flex gap-2">
           <button
             type="submit"
-            className="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm hover:bg-zinc-800"
+            className="h-11 w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 text-base hover:bg-zinc-800"
           >
             Filtrar
           </button>
           <Link
             href="/dashboard/tasks"
-            className="w-full rounded-md border border-zinc-700 px-3 py-2 text-center text-sm hover:bg-zinc-800"
+            className="h-11 w-full rounded-md border border-zinc-700 px-3 text-center text-base leading-[44px] hover:bg-zinc-800"
           >
             Limpiar
           </Link>
@@ -240,70 +241,50 @@ export default async function TasksPage({ searchParams }: { searchParams: Search
         {rows.length === 0 ? (
           <p className="p-4 text-sm text-zinc-300">No hay tareas para este filtro.</p>
         ) : (
-          <table className="w-full text-left text-sm">
+          <table className="w-full text-left text-base">
             <thead className="border-b border-zinc-700 text-zinc-300">
               <tr>
-                <th className="px-4 py-3 font-medium">Titulo</th>
-                <th className="px-4 py-3 font-medium">Cliente</th>
-                <th className="px-4 py-3 font-medium">Editor</th>
-                <th className="px-4 py-3 font-medium">Estado</th>
-                <th className="px-4 py-3 font-medium">Prioridad</th>
-                <th className="px-4 py-3 font-medium">Deadline</th>
-                <th className="px-4 py-3 font-medium">Acciones</th>
+                <th className="px-4 py-4 font-medium">Titulo</th>
+                <th className="px-4 py-4 font-medium">Cliente</th>
+                <th className="px-4 py-4 font-medium">Editor</th>
+                <th className="px-4 py-4 font-medium">Estado</th>
+                <th className="px-4 py-4 font-medium">Prioridad</th>
+                <th className="px-4 py-4 font-medium">Deadline</th>
+                <th className="px-4 py-4 font-medium">Acciones</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((task) => (
                 <tr key={task.id} className="border-b border-zinc-800">
-                  <td className="px-4 py-3">{task.title}</td>
-                  <td className="px-4 py-3">{task.client?.brandName ?? task.client?.name ?? "-"}</td>
-                  <td className="px-4 py-3">{task.editor?.displayName ?? "Sin asignar"}</td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-4">{task.title}</td>
+                  <td className="px-4 py-4">{task.client?.brandName ?? task.client?.name ?? "-"}</td>
+                  <td className="px-4 py-4">{task.editor?.displayName ?? "Sin asignar"}</td>
+                  <td className="px-4 py-4">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className={`rounded-full px-2 py-0.5 text-xs ${stageBadge(task.stage)}`}>
+                      <span className={`rounded-full px-2.5 py-1 text-sm ${stageBadge(task.stage)}`}>
                         {task.stage}
                       </span>
-                      <span className="rounded-full border border-zinc-700 px-2 py-0.5 text-xs text-zinc-300">
+                      <span className="rounded-full border border-zinc-700 px-2.5 py-1 text-sm text-zinc-300">
                         {task.assignmentMode === "AUTOMATIC" ? "Auto" : "Manual"}
                       </span>
                     </div>
                   </td>
-                  <td className="px-4 py-3">
-                    <span className={`rounded-full px-2 py-0.5 text-xs ${priorityBadge(task.priority)}`}>
+                  <td className="px-4 py-4">
+                    <span className={`rounded-full px-2.5 py-1 text-sm ${priorityBadge(task.priority)}`}>
                       {toHumanPriority(task.priority)}
                     </span>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-4">
                     {task.deadlineAt ? task.deadlineAt.toLocaleString("es-AR") : "Sin deadline"}
                   </td>
-                  <td className="px-4 py-3">
-                    <div className="flex flex-wrap gap-2">
-                      <Link href={`/dashboard/tasks/${task.id}`} className="text-xs underline hover:text-white">
-                        Ver detalle
-                      </Link>
-                      {actor.role !== Role.EDITOR ? (
-                        <>
-                          <Link
-                            href={`/dashboard/tasks/${task.id}/edit`}
-                            className="text-xs underline hover:text-white"
-                          >
-                            Editar
-                          </Link>
-                          <Link
-                            href={`/dashboard/tasks/${task.id}?tab=asignacion`}
-                            className="text-xs underline hover:text-white"
-                          >
-                            Reasignar
-                          </Link>
-                          <Link
-                            href={`/dashboard/tasks/${task.id}?tab=estado`}
-                            className="text-xs underline hover:text-white"
-                          >
-                            Cambiar estado
-                          </Link>
-                        </>
-                      ) : null}
-                    </div>
+                  <td className="px-4 py-4">
+                    <TaskRowActions
+                      taskId={task.id}
+                      currentState={task.state}
+                      canManage={actor.role !== Role.EDITOR}
+                      canDelete={actor.role === Role.OWNER}
+                      canArchive={task.state !== TaskState.CLOSED && task.state !== TaskState.CANCELLED}
+                    />
                   </td>
                 </tr>
               ))}

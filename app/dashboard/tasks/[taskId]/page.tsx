@@ -1,4 +1,4 @@
-import { AssignmentStatus, Role, TaskState } from "@prisma/client";
+import { AssignmentStatus, Role } from "@prisma/client";
 import { getServerSession } from "next-auth";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -7,22 +7,16 @@ import { prisma } from "@/lib/db";
 import { toHumanPriority, toHumanTaskStage } from "@/lib/presentation/tasks";
 import { TaskDetailPanel } from "./task-detail-panel";
 
-type SearchParams = Promise<Record<string, string | string[] | undefined>>;
-
 export default async function TaskDetailPage({
   params,
-  searchParams,
 }: {
   params: Promise<{ taskId: string }>;
-  searchParams: SearchParams;
 }) {
   const session = await getServerSession(authOptions);
   if (!session?.user) redirect("/login");
 
   const actor = session.user;
   const { taskId } = await params;
-  const query = await searchParams;
-  const tab = Array.isArray(query.tab) ? query.tab[0] : query.tab;
 
   const task = await prisma.task.findUnique({
     where: { id: taskId },
@@ -52,16 +46,6 @@ export default async function TaskDetailPage({
     const hasAccess = task.assignments.some((assignment) => assignment.editorId === actor.id);
     if (!hasAccess) redirect("/dashboard/tasks");
   }
-
-  const isManager = actor.role === Role.OWNER || actor.role === Role.ADMIN;
-  const editors = isManager
-    ? await prisma.user.findMany({
-        where: { role: Role.EDITOR, status: { not: "LOCKED" } },
-        select: { id: true, displayName: true, status: true },
-        orderBy: { createdAt: "desc" },
-        take: 200,
-      })
-    : [];
 
   const accepted = task.assignments.find((assignment) => assignment.status === AssignmentStatus.ACCEPTED);
   const assigned = task.assignments.find((assignment) => assignment.status === AssignmentStatus.ASSIGNED);
@@ -154,11 +138,6 @@ export default async function TaskDetailPage({
           </div>
         </div>
         <TaskDetailPanel
-          taskId={task.id}
-          currentState={task.state}
-          tab={tab}
-          isManager={isManager}
-          editors={editors}
           assignments={task.assignments.map((assignment) => ({
             id: assignment.id,
             editorId: assignment.editorId,
@@ -167,7 +146,6 @@ export default async function TaskDetailPage({
             assignedAt: assignment.assignedAt.toISOString(),
             acceptedAt: assignment.acceptedAt ? assignment.acceptedAt.toISOString() : null,
           }))}
-          availableStates={Object.values(TaskState)}
         />
       </section>
     </main>

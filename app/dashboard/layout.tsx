@@ -23,7 +23,6 @@ export default async function DashboardLayout({ children }: { children: ReactNod
           { href: "/dashboard/workers", label: "Workers" },
           { href: "/dashboard/tasks", label: "Tareas" },
           { href: "/dashboard/deadlines", label: "Deadlines" },
-          { href: "/dashboard/tasks/new", label: "Crear tarea" },
           ...(isOwner ? [{ href: "/dashboard/finance", label: "Finanzas" }] : []),
           { href: "/dashboard/learning", label: "Learning" },
           { href: "/dashboard/security", label: "Seguridad" },
@@ -37,15 +36,15 @@ export default async function DashboardLayout({ children }: { children: ReactNod
 
   return (
     <div className="min-h-screen bg-[#0b0f14] text-[#e5e7eb]">
-      <div className="mx-auto flex w-full max-w-7xl gap-6 px-4 py-6 md:px-6">
-        <aside className="h-fit w-full rounded-xl border border-zinc-800 bg-[#111827] p-4 md:sticky md:top-6 md:w-64">
-          <p className="mb-4 text-sm font-semibold tracking-wide text-[#e5e7eb]">Dashboard</p>
+      <div className="flex w-full gap-5 px-2 py-5 md:gap-7 md:px-4 lg:px-5">
+        <aside className="h-fit w-full rounded-xl border border-zinc-800 bg-[#111827] p-5 md:sticky md:top-5 md:w-72">
+          <p className="mb-4 text-base font-semibold tracking-wide text-[#e5e7eb]">Dashboard</p>
           <nav className="space-y-1">
             {navItems.map((item) => (
               <Link
                 key={item.href}
                 href={item.href}
-                className="block rounded-md px-3 py-2 text-sm text-zinc-200 transition hover:bg-zinc-800"
+                className="block rounded-md px-3 py-2.5 text-base text-zinc-200 transition hover:bg-zinc-800"
               >
                 {item.label}
               </Link>
