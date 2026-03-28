@@ -174,6 +174,7 @@ model User {
   learningProgress    LearningProgress[]
   directlyAssignedTasks Task[]            @relation("TaskDirectEditor")
   createdFinancialMovements FinancialMovement[] @relation("FinancialMovementCreatedBy")
+  linkedFinancialMovements FinancialMovement[] @relation("FinancialMovementEditor")
   workerNotesAuthored WorkerNote[]        @relation("WorkerNoteAuthor")
   workerNotesReceived WorkerNote[]        @relation("WorkerNoteWorker")
 }
@@ -549,6 +550,7 @@ model SystemConfig {
   id             String               @id @default("default")
   assignmentMode SystemAssignmentMode @default(AUTOMATIC)
   darkModeEnabled Boolean             @default(true)
+  editorSignupOpen Boolean            @default(true)
   createdAt      DateTime             @default(now())
   updatedAt      DateTime             @updatedAt
 }
@@ -566,18 +568,21 @@ model FinancialMovement {
   notes       String?
   clientId    String?
   taskId      String?
+  editorId    String?
   createdById String
   createdAt   DateTime                @default(now())
   updatedAt   DateTime                @updatedAt
 
   client      Client?                 @relation(fields: [clientId], references: [id], onDelete: SetNull)
   task        Task?                   @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  editor      User?                   @relation("FinancialMovementEditor", fields: [editorId], references: [id], onDelete: SetNull)
   createdBy   User                    @relation("FinancialMovementCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
 
   @@index([occurredAt])
   @@index([type, status])
   @@index([clientId])
   @@index([taskId])
+  @@index([editorId])
 }
 
 model WorkerNote {

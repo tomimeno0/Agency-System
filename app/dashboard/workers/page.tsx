@@ -1,4 +1,4 @@
-import { AssignmentStatus, Role, TaskState } from "@prisma/client";
+import { AssignmentStatus, Role, TaskState, UserStatus } from "@prisma/client";
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth/options";
@@ -14,6 +14,29 @@ export default async function WorkersPage() {
   const now = new Date();
   const nowTs = now.getTime();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const inactivityDays = 5;
+  const inactiveSince = new Date(nowTs - inactivityDays * 24 * 60 * 60 * 1000);
+
+  await prisma.user.updateMany({
+    where: {
+      role: Role.EDITOR,
+      status: UserStatus.ACTIVE,
+      OR: [
+        {
+          lastLoginAt: {
+            lt: inactiveSince,
+          },
+        },
+        {
+          lastLoginAt: null,
+          createdAt: {
+            lt: inactiveSince,
+          },
+        },
+      ],
+    },
+    data: { status: UserStatus.INACTIVE },
+  });
 
   const [workers, assignments] = await Promise.all([
     prisma.user.findMany({
@@ -26,7 +49,6 @@ export default async function WorkersPage() {
         role: true,
         status: true,
         lastLoginAt: true,
-        acceptanceRate: true,
       },
       orderBy: { createdAt: "desc" },
       take: 400,
@@ -56,9 +78,12 @@ export default async function WorkersPage() {
     string,
     {
       active: number;
+      pendingOffer: number;
       completed: number;
       failedDeadlines: number;
-      avgDeliveryHours: number | null;
+      avgDeliveryMinutes: number | null;
+      acceptedOffers: number;
+      totalOffers: number;
     }
   >();
   const durationsByWorker = new Map<string, number[]>();
@@ -66,9 +91,12 @@ export default async function WorkersPage() {
   for (const worker of workers) {
     metrics.set(worker.id, {
       active: 0,
+      pendingOffer: 0,
       completed: 0,
       failedDeadlines: 0,
-      avgDeliveryHours: null,
+      avgDeliveryMinutes: null,
+      acceptedOffers: 0,
+      totalOffers: 0,
     });
   }
 
@@ -91,6 +119,27 @@ export default async function WorkersPage() {
       assignment.task.state === TaskState.CLOSED;
     if (completed) {
       workerMetrics.completed += 1;
+    }
+
+    if (
+      assignment.status === AssignmentStatus.ASSIGNED ||
+      assignment.status === AssignmentStatus.ACCEPTED ||
+      assignment.status === AssignmentStatus.REJECTED ||
+      assignment.status === AssignmentStatus.COMPLETED ||
+      assignment.status === AssignmentStatus.CANCELLED ||
+      assignment.status === AssignmentStatus.EXPIRED
+    ) {
+      workerMetrics.totalOffers += 1;
+      if (
+        assignment.status === AssignmentStatus.ACCEPTED ||
+        assignment.status === AssignmentStatus.COMPLETED
+      ) {
+        workerMetrics.acceptedOffers += 1;
+      }
+    }
+
+    if (assignment.status === AssignmentStatus.ASSIGNED && !isCompletedState(assignment.task.state)) {
+      workerMetrics.pendingOffer += 1;
     }
 
     if (assignment.task.deadlineAt && assignment.task.deadlineAt >= monthStart) {
@@ -119,8 +168,8 @@ export default async function WorkersPage() {
     if (!data) continue;
     const durations = durationsByWorker.get(worker.id) ?? [];
     if (durations.length > 0) {
-      data.avgDeliveryHours = Math.round(
-        durations.reduce((sum, item) => sum + item, 0) / durations.length / (1000 * 60 * 60),
+      data.avgDeliveryMinutes = Math.round(
+        durations.reduce((sum, item) => sum + item, 0) / durations.length / (1000 * 60),
       );
     }
   }
@@ -133,6 +182,9 @@ export default async function WorkersPage() {
       worker.lastLoginAt && worker.lastLoginAt.getTime() > nowTs - 15 * 60 * 1000
         ? ("ONLINE" as const)
         : ("OFFLINE" as const);
+    const acceptedOffers = data?.acceptedOffers ?? 0;
+    const totalOffers = data?.totalOffers ?? 0;
+    const acceptanceRate = totalOffers > 0 ? acceptedOffers / totalOffers : 0;
 
     return {
       id: worker.id,
@@ -144,10 +196,11 @@ export default async function WorkersPage() {
       onlineStatus,
       workloadCount: active,
       workloadTag,
-      acceptanceRate: worker.acceptanceRate,
+      acceptanceRate,
+      pendingOfferCount: data?.pendingOffer ?? 0,
       failedDeadlines: data?.failedDeadlines ?? 0,
       completedTasks: data?.completed ?? 0,
-      avgDeliveryHours: data?.avgDeliveryHours ?? null,
+      avgDeliveryMinutes: data?.avgDeliveryMinutes ?? null,
     };
   });
 

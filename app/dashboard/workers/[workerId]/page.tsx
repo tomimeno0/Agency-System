@@ -7,6 +7,14 @@ import { prisma } from "@/lib/db";
 import { isCompletedState, toHumanPriority, toHumanTaskStage } from "@/lib/presentation/tasks";
 import { WorkerProfileActions } from "./worker-profile-actions";
 
+function accountStatusLabel(status: string): string {
+  if (status === "ACTIVE") return "Activo";
+  if (status === "INACTIVE") return "Inactivo";
+  if (status === "LOCKED") return "Bloqueado";
+  if (status === "PENDING_APPROVAL") return "Pendiente";
+  return status;
+}
+
 export default async function WorkerDetailPage({ params }: { params: Promise<{ workerId: string }> }) {
   const session = await getServerSession(authOptions);
   if (!session?.user) redirect("/login");
@@ -24,7 +32,6 @@ export default async function WorkerDetailPage({ params }: { params: Promise<{ w
         status: true,
         createdAt: true,
         lastLoginAt: true,
-        acceptanceRate: true,
       },
     }),
     prisma.taskAssignment.findMany({
@@ -57,7 +64,7 @@ export default async function WorkerDetailPage({ params }: { params: Promise<{ w
       (assignment.status === AssignmentStatus.ASSIGNED || assignment.status === AssignmentStatus.ACCEPTED) &&
       !isCompletedState(assignment.task.state),
   );
-  const pendingAssignments = assignments.filter(
+  const pendingAcceptance = assignments.filter(
     (assignment) => assignment.status === AssignmentStatus.ASSIGNED && !isCompletedState(assignment.task.state),
   );
   const overdueAssignments = activeAssignments.filter(
@@ -92,10 +99,28 @@ export default async function WorkerDetailPage({ params }: { params: Promise<{ w
   const deliveryDurations = assignments
     .filter((assignment) => assignment.completedAt !== null)
     .map((assignment) => assignment.completedAt!.getTime() - assignment.assignedAt.getTime());
-  const averageDeliveryHours =
+  const averageDeliveryMinutes =
     deliveryDurations.length > 0
-      ? Math.round(deliveryDurations.reduce((sum, duration) => sum + duration, 0) / deliveryDurations.length / (1000 * 60 * 60))
+      ? Math.round(
+          deliveryDurations.reduce((sum, duration) => sum + duration, 0) / deliveryDurations.length / (1000 * 60),
+        )
       : null;
+
+  const totalOffers = assignments.filter((assignment) =>
+    [
+      AssignmentStatus.ASSIGNED,
+      AssignmentStatus.ACCEPTED,
+      AssignmentStatus.REJECTED,
+      AssignmentStatus.COMPLETED,
+      AssignmentStatus.CANCELLED,
+      AssignmentStatus.EXPIRED,
+    ].includes(assignment.status),
+  ).length;
+  const acceptedOffers = assignments.filter((assignment) =>
+    assignment.status === AssignmentStatus.ACCEPTED || assignment.status === AssignmentStatus.COMPLETED,
+  ).length;
+  const acceptanceRate = totalOffers > 0 ? (acceptedOffers / totalOffers) * 100 : 0;
+
   const onlineNow = worker.lastLoginAt !== null && worker.lastLoginAt.getTime() > nowTs - 15 * 60 * 1000;
   const workload = activeAssignments.length >= 3 ? "Saturado" : activeAssignments.length >= 1 ? "Ocupado" : "Libre";
 
@@ -116,7 +141,7 @@ export default async function WorkerDetailPage({ params }: { params: Promise<{ w
         </div>
         <div className="flex flex-wrap gap-2 text-sm">
           <span className="rounded-full border border-zinc-700 bg-zinc-900 px-3 py-1">
-            Cuenta: {worker.status}
+            Cuenta: {accountStatusLabel(worker.status)}
           </span>
           <span className="rounded-full border border-zinc-700 bg-zinc-900 px-3 py-1">
             {onlineNow ? "Online ahora" : "Offline"}
@@ -132,7 +157,7 @@ export default async function WorkerDetailPage({ params }: { params: Promise<{ w
           <div className="grid gap-3 rounded-xl border border-zinc-800 bg-[#111827] p-4 md:grid-cols-3">
             <div>
               <p className="text-xs text-zinc-400">Acceptance rate</p>
-              <p className="text-2xl font-semibold">{Math.round(worker.acceptanceRate * 100)}%</p>
+              <p className="text-2xl font-semibold">{Math.round(acceptanceRate)}%</p>
             </div>
             <div>
               <p className="text-xs text-zinc-400">Deadlines fallidos</p>
@@ -140,15 +165,15 @@ export default async function WorkerDetailPage({ params }: { params: Promise<{ w
             </div>
             <div>
               <p className="text-xs text-zinc-400">Promedio entrega</p>
-              <p className="text-2xl font-semibold">{averageDeliveryHours ?? "-"}h</p>
+              <p className="text-2xl font-semibold">{averageDeliveryMinutes ?? "-"} min</p>
             </div>
             <div>
               <p className="text-xs text-zinc-400">Tareas activas</p>
               <p className="text-2xl font-semibold">{activeAssignments.length}</p>
             </div>
             <div>
-              <p className="text-xs text-zinc-400">Tareas pendientes</p>
-              <p className="text-2xl font-semibold">{pendingAssignments.length}</p>
+              <p className="text-xs text-zinc-400">Pendientes de aceptar</p>
+              <p className="text-2xl font-semibold">{pendingAcceptance.length}</p>
             </div>
             <div>
               <p className="text-xs text-zinc-400">Tareas completadas</p>
@@ -174,8 +199,8 @@ export default async function WorkerDetailPage({ params }: { params: Promise<{ w
                         <div>
                           <p>{assignment.task.title}</p>
                           <p className="text-xs text-zinc-400">
-                            {assignment.task.client?.brandName ?? assignment.task.client?.name ?? "-"} ·{" "}
-                            {toHumanPriority(assignment.task.priority)} · {stage}
+                            {assignment.task.client?.brandName ?? assignment.task.client?.name ?? "-"} |{" "}
+                            {toHumanPriority(assignment.task.priority)} | {stage}
                           </p>
                         </div>
                         <p className="text-xs text-zinc-300">

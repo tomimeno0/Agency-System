@@ -72,6 +72,7 @@ export async function getSystemConfig() {
       id: "default",
       assignmentMode: SystemAssignmentMode.AUTOMATIC,
       darkModeEnabled: true,
+      editorSignupOpen: true,
     },
   });
 }
@@ -322,7 +323,7 @@ export async function continueAssignmentFlow(taskId: string, actorUserId: string
       data: {
         assignmentFlowStatus: TaskAssignmentFlowStatus.ACCEPTED,
         offerExpiresAt: null,
-        state: TaskState.ACCEPTED,
+        state: TaskState.IN_EDITING,
       },
     });
     return;
@@ -348,6 +349,7 @@ export async function acceptAssignment(assignmentId: string, actorUserId: string
       task: {
         select: {
           id: true,
+          state: true,
           title: true,
           createdById: true,
         },
@@ -388,7 +390,7 @@ export async function acceptAssignment(assignmentId: string, actorUserId: string
     await tx.task.update({
       where: { id: assignment.taskId },
       data: {
-        state: TaskState.ACCEPTED,
+        state: TaskState.IN_EDITING,
         assignmentFlowStatus: TaskAssignmentFlowStatus.ACCEPTED,
         offerExpiresAt: null,
       },
@@ -399,10 +401,10 @@ export async function acceptAssignment(assignmentId: string, actorUserId: string
     await tx.taskStatusHistory.create({
       data: {
         taskId: assignment.taskId,
-        fromState: TaskState.PENDING_ASSIGNMENT,
-        toState: TaskState.ACCEPTED,
+        fromState: assignment.task.state,
+        toState: TaskState.IN_EDITING,
         changedById: actorUserId,
-        comment: "Assignment accepted",
+        comment: "Assignment accepted and moved to editing",
       },
     });
   });

@@ -25,7 +25,7 @@ async function main() {
     },
   });
 
-  const learningSeed = [
+  const learningSeed = [    
     {
       title: "Narrative Editing Fundamentals",
       description: "Core pacing, story structure, and sequencing principles.",

@@ -31,7 +31,13 @@ export const POST = defineRoute(async (request, _context, requestId) => {
     forbidden("Editor can only submit for own assignments");
   }
 
-  assertTaskTransitionAllowed(assignment.task.state, TaskState.UPLOADED);
+  const requiresAutoStartEditing = assignment.task.state === TaskState.ACCEPTED;
+  if (requiresAutoStartEditing) {
+    assertTaskTransitionAllowed(TaskState.ACCEPTED, TaskState.IN_EDITING);
+    assertTaskTransitionAllowed(TaskState.IN_EDITING, TaskState.UPLOADED);
+  } else {
+    assertTaskTransitionAllowed(assignment.task.state, TaskState.UPLOADED);
+  }
 
   const submission = await prisma.$transaction(async (tx) => {
     const created = await tx.submission.create({
@@ -43,6 +49,23 @@ export const POST = defineRoute(async (request, _context, requestId) => {
       },
     });
 
+    if (requiresAutoStartEditing) {
+      await tx.task.update({
+        where: { id: assignment.taskId },
+        data: { state: TaskState.IN_EDITING },
+      });
+
+      await tx.taskStatusHistory.create({
+        data: {
+          taskId: assignment.taskId,
+          fromState: TaskState.ACCEPTED,
+          toState: TaskState.IN_EDITING,
+          changedById: actor.id,
+          comment: "Auto-start editing before submission",
+        },
+      });
+    }
+
     await tx.task.update({
       where: { id: assignment.taskId },
       data: { state: TaskState.UPLOADED },
@@ -51,7 +74,7 @@ export const POST = defineRoute(async (request, _context, requestId) => {
     await tx.taskStatusHistory.create({
       data: {
         taskId: assignment.taskId,
-        fromState: assignment.task.state,
+        fromState: requiresAutoStartEditing ? TaskState.IN_EDITING : assignment.task.state,
         toState: TaskState.UPLOADED,
         changedById: actor.id,
         comment: "Submission uploaded",

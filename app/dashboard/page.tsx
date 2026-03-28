@@ -4,7 +4,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth/options";
 import { prisma } from "@/lib/db";
-import { isCompletedState, toHumanTaskStage } from "@/lib/presentation/tasks";
+import { isCompletedState, toHumanPriority, toHumanTaskStage } from "@/lib/presentation/tasks";
 import { continueAssignmentFlow, markExpiredOffers } from "@/lib/services/assignment-engine";
 import { OwnerControls } from "./owner-controls";
 import { SignOutButton } from "./signout-button";
@@ -47,44 +47,201 @@ export default async function DashboardPage() {
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
   if (actor.role === Role.EDITOR) {
-    const [myTasks, overdue, dueSoon, learningCount] = await Promise.all([
-      prisma.taskAssignment.count({ where: { editorId: actor.id } }),
-      prisma.taskAssignment.count({
+    const [editorTasks, learningResources] = await Promise.all([
+      prisma.task.findMany({
         where: {
-          editorId: actor.id,
-          task: {
-            deadlineAt: { lt: now },
-            state: { notIn: [TaskState.APPROVED, TaskState.DELIVERED, TaskState.CLOSED, TaskState.CANCELLED] },
+          OR: [
+            { directEditorId: actor.id },
+            {
+              assignments: {
+                some: {
+                  editorId: actor.id,
+                  status: { in: [AssignmentStatus.ASSIGNED, AssignmentStatus.ACCEPTED, AssignmentStatus.COMPLETED] },
+                },
+              },
+            },
+          ],
+        },
+        include: {
+          client: { select: { id: true, name: true, brandName: true } },
+          assignments: {
+            where: { editorId: actor.id },
+            orderBy: { assignedAt: "desc" },
+            take: 1,
+            select: {
+              id: true,
+              status: true,
+              assignedAt: true,
+              acceptedAt: true,
+              completedAt: true,
+            },
           },
         },
+        orderBy: [{ deadlineAt: "asc" }, { createdAt: "desc" }],
+        take: 200,
       }),
-      prisma.taskAssignment.count({
-        where: {
-          editorId: actor.id,
-          task: {
-            deadlineAt: { gte: now, lte: in24h },
-            state: { notIn: [TaskState.APPROVED, TaskState.DELIVERED, TaskState.CLOSED, TaskState.CANCELLED] },
-          },
-        },
+      prisma.learningResource.findMany({
+        where: { isActive: true },
+        select: { id: true, title: true, level: true, url: true },
+        orderBy: { createdAt: "desc" },
+        take: 3,
       }),
-      prisma.learningResource.count({ where: { isActive: true } }),
     ]);
+
+    const tasksWithContext = editorTasks.map((task) => {
+      const ownAssignment = task.assignments[0] ?? null;
+      const pendingAcceptance = ownAssignment?.status === AssignmentStatus.ASSIGNED;
+      const inCorrection = task.state === TaskState.NEEDS_CORRECTION;
+      const inReview = task.state === TaskState.UPLOADED || task.state === TaskState.IN_REVIEW;
+      const completed =
+        task.state === TaskState.APPROVED ||
+        task.state === TaskState.DELIVERED ||
+        task.state === TaskState.CLOSED;
+      const editorStatus = completed
+        ? "Completada"
+        : inCorrection
+          ? "Correccion"
+          : inReview
+            ? "En revision"
+            : pendingAcceptance
+              ? "Pendiente"
+              : "En proceso";
+      return {
+        ...task,
+        ownAssignment,
+        editorStatus,
+        pendingAcceptance,
+      };
+    });
+
+    const activeTasks = tasksWithContext.filter(
+      (task) =>
+        task.state !== TaskState.CANCELLED &&
+        task.state !== TaskState.CLOSED &&
+        task.state !== TaskState.DELIVERED &&
+        task.state !== TaskState.APPROVED,
+    );
+    const pendingAccept = tasksWithContext.filter((task) => task.pendingAcceptance).length;
+    const overdue = activeTasks.filter((task) => Boolean(task.deadlineAt && task.deadlineAt < now)).length;
+    const dueSoon = activeTasks.filter(
+      (task) => Boolean(task.deadlineAt && task.deadlineAt >= now && task.deadlineAt <= in24h),
+    ).length;
+    const previewTasks = activeTasks.slice(0, 5);
+    const urgentDeadlines = [...activeTasks]
+      .filter((task) => Boolean(task.deadlineAt))
+      .sort((a, b) => (a.deadlineAt?.getTime() ?? 0) - (b.deadlineAt?.getTime() ?? 0))
+      .slice(0, 5);
 
     return (
       <main className="w-full px-2 py-2 text-white md:px-4">
         <header className="mb-6 flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-semibold">Resumen operativo</h1>
+            <h1 className="text-3xl font-semibold">Resumen</h1>
             <p className="text-sm text-zinc-400">Hola, {actor.name ?? actor.email}</p>
           </div>
           <SignOutButton />
         </header>
 
-        <section className="grid gap-4 md:grid-cols-4">
-          {metricCard("Mis tareas", myTasks, "/dashboard/tasks")}
-          {metricCard("Atrasadas", overdue, "/dashboard/tasks?overdue=1")}
-          {metricCard("Vencen en 24h", dueSoon, "/dashboard/tasks?deadline=24h")}
-          {metricCard("Learning", learningCount, "/dashboard/learning")}
+        <section className="mb-5 rounded-xl border border-zinc-800 bg-[#111827] p-4">
+          <h2 className="mb-3 text-lg font-semibold">Alertas</h2>
+          <div className="space-y-2">
+            <Link
+              href="/dashboard/tasks?estado=atrasadas"
+              className="block rounded-md border border-red-700 bg-red-950/20 px-3 py-2 text-sm text-red-200"
+            >
+              Tenes {overdue} tareas atrasadas
+            </Link>
+            <Link
+              href="/dashboard/tasks?deadline=24h"
+              className="block rounded-md border border-amber-700 bg-amber-950/20 px-3 py-2 text-sm text-amber-200"
+            >
+              {dueSoon} tareas vencen en menos de 24h
+            </Link>
+            <Link
+              href="/dashboard/tasks?estado=pendiente"
+              className="block rounded-md border border-blue-700 bg-blue-950/20 px-3 py-2 text-sm text-blue-200"
+            >
+              Tenes {pendingAccept} tareas pendientes de aceptar
+            </Link>
+          </div>
+        </section>
+
+        <section className="mb-5 rounded-xl border border-zinc-800 bg-[#111827] p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-lg font-semibold">Mis tareas activas</h2>
+            <Link href="/dashboard/tasks" className="text-sm underline hover:text-white">
+              Ver todas
+            </Link>
+          </div>
+          {previewTasks.length === 0 ? (
+            <p className="text-sm text-zinc-400">No tenes tareas activas ahora.</p>
+          ) : (
+            <div className="space-y-2">
+              {previewTasks.map((task) => (
+                <Link
+                  key={task.id}
+                  href={`/dashboard/tasks/${task.id}`}
+                  className="grid gap-1 rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm md:grid-cols-5 md:items-center"
+                >
+                  <span className="font-medium">{task.title}</span>
+                  <span>{task.client?.brandName ?? task.client?.name ?? "-"}</span>
+                  <span>{task.editorStatus}</span>
+                  <span>{task.deadlineAt ? task.deadlineAt.toLocaleString("es-AR") : "Sin deadline"}</span>
+                  <span>{toHumanPriority(task.priority)}</span>
+                </Link>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section className="mb-5 rounded-xl border border-zinc-800 bg-[#111827] p-4">
+          <h2 className="mb-3 text-lg font-semibold">Deadlines</h2>
+          {urgentDeadlines.length === 0 ? (
+            <p className="text-sm text-zinc-400">Sin deadlines cercanos.</p>
+          ) : (
+            <div className="space-y-2">
+              {urgentDeadlines.map((task) => {
+                const isOverdue = Boolean(task.deadlineAt && task.deadlineAt < now);
+                const isSoon = Boolean(task.deadlineAt && task.deadlineAt >= now && task.deadlineAt <= in24h);
+                const tone = isOverdue
+                  ? "border-red-700 bg-red-950/20 text-red-200"
+                  : isSoon
+                    ? "border-amber-700 bg-amber-950/20 text-amber-200"
+                    : "border-zinc-700 bg-zinc-900 text-zinc-200";
+                return (
+                  <Link
+                    key={task.id}
+                    href={`/dashboard/tasks/${task.id}`}
+                    className={`flex items-center justify-between rounded-md border px-3 py-2 text-sm ${tone}`}
+                  >
+                    <span>{task.title}</span>
+                    <span>{task.deadlineAt?.toLocaleString("es-AR")}</span>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        <section className="rounded-xl border border-zinc-800 bg-[#111827] p-4">
+          <div className="mb-2 flex items-center justify-between">
+            <h2 className="text-lg font-semibold">Learning</h2>
+            <Link href="/dashboard/learning" className="text-sm underline hover:text-white">
+              Ir a learning
+            </Link>
+          </div>
+          {learningResources.length === 0 ? (
+            <p className="text-sm text-zinc-400">No hay recursos cargados.</p>
+          ) : (
+            <ul className="space-y-2 text-sm">
+              {learningResources.map((item) => (
+                <li key={item.id} className="rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2">
+                  <p className="font-medium">{item.title}</p>
+                  <p className="text-xs text-zinc-400">{item.level.toLowerCase()}</p>
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
       </main>
     );
@@ -94,7 +251,12 @@ export default async function DashboardPage() {
   const config = await prisma.systemConfig.upsert({
     where: { id: "default" },
     update: {},
-    create: { id: "default", assignmentMode: "AUTOMATIC", darkModeEnabled: true },
+    create: {
+      id: "default",
+      assignmentMode: "AUTOMATIC",
+      darkModeEnabled: true,
+      editorSignupOpen: true,
+    },
   });
 
   const [tasks, workers, pendingApprovals, monthlyMovements] = await Promise.all([
@@ -229,7 +391,7 @@ export default async function DashboardPage() {
     },
     {
       label: `${reviewStuck.length} tareas en revision por mas de 48h`,
-      href: "/dashboard/tasks?estado=en_revision",
+      href: "/dashboard/review",
       level: "warning" as const,
       visible: reviewStuck.length > 0,
     },

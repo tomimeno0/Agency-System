@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth/options";
 import { prisma } from "@/lib/db";
 import { isCompletedState, toHumanPriority, toHumanTaskStage } from "@/lib/presentation/tasks";
+import { EditorTasksBoard } from "./editor-tasks-board";
 import { TaskRowActions } from "./task-row-actions";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
@@ -32,6 +33,62 @@ function stageBadge(stage: string): string {
   return "border border-emerald-700 bg-emerald-950/20 text-emerald-200";
 }
 
+function mapEditorStatus(taskState: TaskState, assignmentStatus?: AssignmentStatus): "Pendiente" | "En proceso" | "En revision" | "Correccion" | "Completada" {
+  if (
+    taskState === TaskState.APPROVED ||
+    taskState === TaskState.DELIVERED ||
+    taskState === TaskState.CLOSED ||
+    taskState === TaskState.CANCELLED
+  ) {
+    return "Completada";
+  }
+  if (taskState === TaskState.NEEDS_CORRECTION) return "Correccion";
+  if (taskState === TaskState.UPLOADED || taskState === TaskState.IN_REVIEW) return "En revision";
+  if (assignmentStatus === AssignmentStatus.ASSIGNED) return "Pendiente";
+  return "En proceso";
+}
+
+function normalizeEditorFilters(input: {
+  estado: string;
+  prioridad: string;
+  deadline: string;
+  cliente: string;
+}) {
+  const byEstado: Record<string, string> = {
+    pendiente: "Pendiente",
+    en_proceso: "En proceso",
+    en_revision: "En revision",
+    correccion: "Correccion",
+    completada: "Completada",
+  };
+
+  let mappedDeadline = input.deadline;
+  if (input.estado === "atrasadas") {
+    mappedDeadline = "vencidas";
+  }
+
+  return {
+    estado: byEstado[input.estado] ?? "todos",
+    prioridad:
+      input.prioridad === "alta"
+        ? "Alta"
+        : input.prioridad === "media"
+          ? "Media"
+          : input.prioridad === "baja"
+            ? "Baja"
+            : "todos",
+    deadline:
+      mappedDeadline === "24h" ||
+      mappedDeadline === "48h" ||
+      mappedDeadline === "hoy" ||
+      mappedDeadline === "vencidas" ||
+      mappedDeadline === "sin_deadline"
+        ? mappedDeadline
+        : "todos",
+    cliente: input.cliente,
+  };
+}
+
 export default async function TasksPage({ searchParams }: { searchParams: SearchParams }) {
   const session = await getServerSession(authOptions);
   if (!session?.user) redirect("/login");
@@ -54,26 +111,82 @@ export default async function TasksPage({ searchParams }: { searchParams: Search
     where:
       actor.role === Role.EDITOR
         ? {
-            assignments: {
-              some: { editorId: actor.id },
-            },
+            OR: [
+              {
+                assignments: {
+                  some: {
+                    editorId: actor.id,
+                    status: {
+                      in: [AssignmentStatus.ASSIGNED, AssignmentStatus.ACCEPTED, AssignmentStatus.COMPLETED],
+                    },
+                  },
+                },
+              },
+              {
+                directEditorId: actor.id,
+              },
+            ],
           }
         : undefined,
     include: {
       client: { select: { id: true, name: true, brandName: true } },
       directEditor: { select: { id: true, displayName: true } },
-      assignments: {
-        select: {
-          id: true,
-          editorId: true,
-          status: true,
-          editor: { select: { id: true, displayName: true } },
-        },
-      },
+      assignments:
+        actor.role === Role.EDITOR
+          ? {
+              where: { editorId: actor.id },
+              orderBy: { assignedAt: "desc" },
+              take: 1,
+              select: {
+                id: true,
+                editorId: true,
+                status: true,
+                editor: { select: { id: true, displayName: true } },
+              },
+            }
+          : {
+              select: {
+                id: true,
+                editorId: true,
+                status: true,
+                editor: { select: { id: true, displayName: true } },
+              },
+            },
     },
     orderBy: [{ deadlineAt: "asc" }, { createdAt: "desc" }],
     take: 600,
   });
+
+  if (actor.role === Role.EDITOR) {
+    const filters = normalizeEditorFilters({
+      estado,
+      prioridad,
+      deadline: deadlineFiltro,
+      cliente: clienteFiltro,
+    });
+
+    const editorRows = tasks.map((task) => {
+      const ownAssignment = task.assignments[0];
+      const clientName = task.client?.brandName ?? task.client?.name ?? "-";
+      const status = mapEditorStatus(task.state, ownAssignment?.status);
+      const canDeliver =
+        Boolean(ownAssignment?.id) && (status === "En proceso" || status === "Correccion");
+
+      return {
+        id: task.id,
+        title: task.title,
+        clientName,
+        status,
+        deadlineAt: task.deadlineAt ? task.deadlineAt.toISOString() : null,
+        priority: toHumanPriority(task.priority),
+        assignmentId: ownAssignment?.id ?? null,
+        pendingAcceptance: ownAssignment?.status === AssignmentStatus.ASSIGNED,
+        canDeliver,
+      };
+    });
+
+    return <EditorTasksBoard tasks={editorRows} initialFilters={filters} />;
+  }
 
   const clients = Array.from(
     new Map(
@@ -149,17 +262,15 @@ export default async function TasksPage({ searchParams }: { searchParams: Search
     <main className="w-full">
       <div className="mb-4 flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-semibold">{actor.role === Role.EDITOR ? "Mis tasks" : "Tasks"}</h1>
+          <h1 className="text-3xl font-semibold">Tasks</h1>
           <p className="text-base text-zinc-400">Control de flujo con filtros operativos</p>
         </div>
-        {actor.role !== Role.EDITOR ? (
-          <Link
-            href="/dashboard/tasks/new"
-            className="rounded-md border border-zinc-700 bg-zinc-900 px-4 py-2.5 text-base hover:bg-zinc-800"
-          >
-            Crear task
-          </Link>
-        ) : null}
+        <Link
+          href="/dashboard/tasks/new"
+          className="rounded-md border border-zinc-700 bg-zinc-900 px-4 py-2.5 text-base hover:bg-zinc-800"
+        >
+          Crear task
+        </Link>
       </div>
 
       <form className="mb-5 grid gap-2 rounded-xl border border-zinc-800 bg-[#111827] p-4 md:grid-cols-6">
@@ -262,7 +373,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Search
                   <td className="px-4 py-4">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className={`rounded-full px-2.5 py-1 text-sm ${stageBadge(task.stage)}`}>
-                        {task.stage}
+                        {task.stage === "En revision" ? "Lista para revisar" : task.stage}
                       </span>
                       <span className="rounded-full border border-zinc-700 px-2.5 py-1 text-sm text-zinc-300">
                         {task.assignmentMode === "AUTOMATIC" ? "Auto" : "Manual"}
@@ -280,8 +391,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Search
                   <td className="px-4 py-4">
                     <TaskRowActions
                       taskId={task.id}
-                      currentState={task.state}
-                      canManage={actor.role !== Role.EDITOR}
+                      canManage
                       canDelete={actor.role === Role.OWNER}
                       canArchive={task.state !== TaskState.CLOSED && task.state !== TaskState.CANCELLED}
                     />

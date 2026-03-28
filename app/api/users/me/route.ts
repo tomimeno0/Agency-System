@@ -27,6 +27,7 @@ export const PATCH = defineRoute(async (request, _context, requestId) => {
   const user = await prisma.user.update({
     where: { id: actor.id },
     data: {
+      email: payload.email?.toLowerCase(),
       displayName: payload.displayName,
       fullName: payload.fullName,
       avatarUrl: payload.avatarUrl,

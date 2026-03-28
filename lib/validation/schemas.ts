@@ -105,7 +105,14 @@ export const taskCreateSchema = z.object({
   state: taskStateSchema.default(TaskState.DRAFT),
 });
 
-export const taskUpdateSchema = taskCreateSchema.partial();
+export const taskUpdateSchema = taskCreateSchema
+  .partial()
+  .extend({
+    projectId: cuidSchema.nullable().optional(),
+    clientId: cuidSchema.nullable().optional(),
+    directEditorId: cuidSchema.nullable().optional(),
+    deadlineAt: z.string().datetime().nullable().optional(),
+  });
 
 export const assignmentCreateSchema = z.object({
   editorId: cuidSchema,
@@ -149,6 +156,7 @@ export const financialMovementCreateSchema = z.object({
   notes: z.string().max(2000).optional(),
   clientId: cuidSchema.optional(),
   taskId: cuidSchema.optional(),
+  editorId: cuidSchema.optional(),
   status: financialMovementStatusSchema.default(FinancialMovementStatus.CONFIRMED),
 });
 

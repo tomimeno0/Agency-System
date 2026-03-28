@@ -1,4 +1,4 @@
-import { AssignmentMode, Role } from "@prisma/client";
+import { AssignmentMode, AssignmentStatus, Role } from "@prisma/client";
 import { defineRoute, parseJson } from "@/lib/http/route";
 import { ok } from "@/lib/http/response";
 import { forbidden } from "@/lib/http/errors";
@@ -26,11 +26,21 @@ export const GET = defineRoute(async (request, _context, requestId) => {
   if (actor.role === Role.EDITOR) {
     const tasks = await prisma.task.findMany({
       where: {
-        assignments: {
-          some: {
-            editorId: actor.id,
+        OR: [
+          {
+            assignments: {
+              some: {
+                editorId: actor.id,
+                status: {
+                  in: [AssignmentStatus.ASSIGNED, AssignmentStatus.ACCEPTED, AssignmentStatus.COMPLETED],
+                },
+              },
+            },
           },
-        },
+          {
+            directEditorId: actor.id,
+          },
+        ],
       },
       include: {
         project: {

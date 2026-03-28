@@ -19,6 +19,7 @@ export const GET = defineRoute(async (request, _context, requestId) => {
     include: {
       client: { select: { id: true, name: true, brandName: true } },
       task: { select: { id: true, title: true } },
+      editor: { select: { id: true, displayName: true } },
       createdBy: { select: { id: true, displayName: true } },
     },
     orderBy: { occurredAt: "desc" },
@@ -48,6 +49,7 @@ export const POST = defineRoute(async (request, _context, requestId) => {
       notes: payload.notes,
       clientId: payload.clientId,
       taskId: payload.taskId,
+      editorId: payload.editorId,
       createdById: actor.id,
     },
   });

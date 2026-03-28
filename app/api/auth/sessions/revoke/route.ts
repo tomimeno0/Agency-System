@@ -1,6 +1,5 @@
 import { defineRoute, parseJson } from "@/lib/http/route";
 import { ok } from "@/lib/http/response";
-import { badRequest } from "@/lib/http/errors";
 import { prisma } from "@/lib/db";
 import { requireSessionUser } from "@/lib/auth/session";
 import { sessionRevokeSchema } from "@/lib/validation/schemas";
@@ -32,17 +31,15 @@ export const POST = defineRoute(async (request, _context, requestId) => {
     revoked = result.count;
   } else {
     const sessionToken = getCurrentSessionToken(request);
-    if (!sessionToken) {
-      badRequest("Current session token not found in cookies");
+    if (sessionToken) {
+      const result = await prisma.session.deleteMany({
+        where: {
+          userId: actor.id,
+          sessionToken,
+        },
+      });
+      revoked = result.count;
     }
-
-    const result = await prisma.session.deleteMany({
-      where: {
-        userId: actor.id,
-        sessionToken,
-      },
-    });
-    revoked = result.count;
   }
 
   const { ip, userAgent } = requestMeta(request);
@@ -56,5 +53,37 @@ export const POST = defineRoute(async (request, _context, requestId) => {
     userAgent,
   });
 
-  return ok({ revoked }, requestId);
+  const response = ok({ revoked }, requestId);
+  const secure = process.env.NODE_ENV === "production";
+  const expires = new Date(0);
+  const cookieNames = [
+    "next-auth.session-token",
+    "__Secure-next-auth.session-token",
+    "authjs.session-token",
+    "__Secure-authjs.session-token",
+    "next-auth.callback-url",
+    "__Secure-next-auth.callback-url",
+    "authjs.callback-url",
+    "__Secure-authjs.callback-url",
+    "next-auth.csrf-token",
+    "__Host-next-auth.csrf-token",
+    "authjs.csrf-token",
+    "__Host-authjs.csrf-token",
+  ];
+
+  for (const cookieName of cookieNames) {
+    response.cookies.set(cookieName, "", {
+      path: "/",
+      httpOnly: cookieName.includes("session-token") || cookieName.includes("csrf-token"),
+      sameSite: "lax",
+      secure,
+      expires,
+      maxAge: 0,
+    });
+  }
+
+  response.headers.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  response.headers.set("Pragma", "no-cache");
+  response.headers.set("Expires", "0");
+  return response;
 });

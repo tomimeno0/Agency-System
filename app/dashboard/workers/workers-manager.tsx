@@ -14,9 +14,10 @@ type WorkerRow = {
   workloadCount: number;
   workloadTag: "Libre" | "Ocupado" | "Saturado" | string;
   acceptanceRate: number;
+  pendingOfferCount: number;
   failedDeadlines: number;
   completedTasks: number;
-  avgDeliveryHours: number | null;
+  avgDeliveryMinutes: number | null;
 };
 
 function statusLabel(status: WorkerRow["accountStatus"]): string {
@@ -127,6 +128,7 @@ export function WorkersManager({
                 <th className="px-4 py-3 font-medium">Estado online</th>
                 <th className="px-4 py-3 font-medium">Workload</th>
                 <th className="px-4 py-3 font-medium">Acceptance rate</th>
+                <th className="px-4 py-3 font-medium">Pend. aceptar</th>
                 <th className="px-4 py-3 font-medium">Deadlines fallidos</th>
                 <th className="px-4 py-3 font-medium">Acciones</th>
               </tr>
@@ -164,10 +166,11 @@ export function WorkersManager({
                     </span>
                   </td>
                   <td className="px-4 py-3">{Math.round((worker.acceptanceRate ?? 0) * 100)}%</td>
+                  <td className="px-4 py-3">{worker.pendingOfferCount}</td>
                   <td className="px-4 py-3">
                     {worker.failedDeadlines}
                     <span className="block text-xs text-zinc-500">
-                      avg entrega: {worker.avgDeliveryHours ?? "-"}h
+                      avg entrega: {worker.avgDeliveryMinutes ?? "-"} min
                     </span>
                   </td>
                   <td className="px-4 py-3">

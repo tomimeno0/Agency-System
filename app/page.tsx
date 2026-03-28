@@ -1,6 +1,22 @@
-﻿import Link from "next/link";
+import { SystemAssignmentMode } from "@prisma/client";
+import Link from "next/link";
+import { prisma } from "@/lib/db";
 
-export default function Home() {
+export const dynamic = "force-dynamic";
+
+export default async function Home() {
+  const config = await prisma.systemConfig.upsert({
+    where: { id: "default" },
+    update: {},
+    create: {
+      id: "default",
+      assignmentMode: SystemAssignmentMode.AUTOMATIC,
+      darkModeEnabled: true,
+      editorSignupOpen: true,
+    },
+    select: { editorSignupOpen: true },
+  });
+
   return (
     <main className="flex min-h-screen flex-col bg-black text-white">
       <header className="flex flex-col items-center pt-10">
@@ -14,17 +30,29 @@ export default function Home() {
             href="/login"
             className="w-full rounded-md bg-white px-6 py-3 text-center text-base font-semibold text-black transition hover:bg-zinc-200"
           >
-            Iniciar sesión
+            Iniciar sesion
           </Link>
 
-          <Link
-            href="/register"
-            className="w-full rounded-md border border-white px-6 py-3 text-center text-base font-medium text-white transition hover:bg-white hover:text-black"
-          >
-            Crear cuenta
-          </Link>
+          {config.editorSignupOpen ? (
+            <Link
+              href="/register"
+              className="w-full rounded-md border border-white px-6 py-3 text-center text-base font-medium text-white transition hover:bg-white hover:text-black"
+            >
+              Crear cuenta
+            </Link>
+          ) : (
+            <div className="w-full rounded-md border border-zinc-700 px-6 py-3 text-center text-base font-medium text-zinc-500">
+              Registro cerrado por ahora
+            </div>
+          )}
 
-          <p className="pt-2 text-sm text-zinc-400">— o —</p>
+          {!config.editorSignupOpen ? (
+            <p className="text-center text-xs text-zinc-500">
+              No se requieren nuevos editores en este momento.
+            </p>
+          ) : null}
+
+          <p className="pt-2 text-sm text-zinc-400">- o -</p>
 
           <a
             href="https://wa.me/5491154662008?text=Hola,%20quiero%20postularme%20como%20editor%20en%20EDITEX%20STUDIO"
@@ -32,7 +60,7 @@ export default function Home() {
             rel="noopener noreferrer"
             className="w-full rounded-md border border-zinc-600 px-6 py-3 text-center text-base font-medium text-white transition hover:border-zinc-400"
           >
-            Quiero trabajar aquí
+            Quiero trabajar aqui
           </a>
 
           <a

@@ -10,11 +10,12 @@ export default async function FinancePage() {
   if (!session?.user) redirect("/login");
   if (session.user.role !== Role.OWNER) redirect("/dashboard");
 
-  const [movements, clients, tasks, pendingApprovals] = await Promise.all([
+  const [movements, clients, tasks, editors, pendingApprovals] = await Promise.all([
     prisma.financialMovement.findMany({
       include: {
         client: { select: { id: true, name: true, brandName: true } },
         task: { select: { id: true, title: true } },
+        editor: { select: { id: true, displayName: true } },
       },
       orderBy: { occurredAt: "desc" },
       take: 2000,
@@ -26,6 +27,12 @@ export default async function FinancePage() {
     }),
     prisma.task.findMany({
       select: { id: true, title: true },
+      orderBy: { createdAt: "desc" },
+      take: 400,
+    }),
+    prisma.user.findMany({
+      where: { role: Role.EDITOR },
+      select: { id: true, displayName: true },
       orderBy: { createdAt: "desc" },
       take: 400,
     }),
@@ -49,12 +56,15 @@ export default async function FinancePage() {
         clientName: item.client?.brandName ?? item.client?.name ?? null,
         taskId: item.taskId,
         taskTitle: item.task?.title ?? null,
+        editorId: item.editorId,
+        editorName: item.editor?.displayName ?? null,
       }))}
       clients={clients.map((client) => ({
         id: client.id,
         name: client.brandName ?? client.name,
       }))}
       tasks={tasks}
+      editors={editors}
       pendingApprovals={pendingApprovals}
     />
   );

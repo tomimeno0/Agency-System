@@ -26,43 +26,45 @@ export default function ResetPasswordConfirmPage() {
     setLoading(false);
 
     if (!response.ok) {
-      setError("No se pudo cambiar la contraseña. Revisá el enlace o solicitá uno nuevo.");
+      setError("No se pudo cambiar la contrasena. Revisa el enlace o solicita uno nuevo.");
       return;
     }
 
-    setMessage("Contraseña actualizada. Ya podés iniciar sesión.");
+    setMessage("Contrasena actualizada. Ya puedes iniciar sesion.");
     setNewPassword("");
   }
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-md flex-col justify-center bg-[#0b0f14] px-6 py-16 text-[#e5e7eb]">
-      <h1 className="text-3xl font-semibold tracking-tight">Nueva contraseña</h1>
-      <p className="mt-2 text-sm text-zinc-400">El enlace es válido por tiempo limitado</p>
+    <main className="min-h-screen w-full bg-[#0b0f14] px-6 py-16 text-[#e5e7eb]">
+      <div className="mx-auto flex min-h-[70vh] w-full max-w-md flex-col justify-center">
+        <h1 className="text-3xl font-semibold tracking-tight">Nueva contrasena</h1>
+        <p className="mt-2 text-sm text-zinc-400">El enlace es valido por tiempo limitado</p>
 
-      <form className="mt-8 space-y-4" onSubmit={onSubmit}>
-        <input
-          type="password"
-          className="w-full rounded-lg border border-zinc-700 bg-[#111827] px-3 py-2 outline-none transition focus:border-zinc-500"
-          placeholder="Nueva contraseña (mínimo 7)"
-          value={newPassword}
-          onChange={(event) => setNewPassword(event.target.value)}
-          required
-        />
+        <form className="mt-8 space-y-4" onSubmit={onSubmit}>
+          <input
+            type="password"
+            className="w-full rounded-lg border border-zinc-700 bg-[#111827] px-3 py-2 outline-none transition focus:border-zinc-500"
+            placeholder="Nueva contrasena (minimo 7)"
+            value={newPassword}
+            onChange={(event) => setNewPassword(event.target.value)}
+            required
+          />
 
-        {!token ? (
-          <p className="text-sm text-red-400">Token inválido. Abrí el link recibido por email.</p>
-        ) : null}
-        {error ? <p className="text-sm text-red-400">{error}</p> : null}
-        {message ? <p className="text-sm text-emerald-400">{message}</p> : null}
+          {!token ? (
+            <p className="text-sm text-red-400">Token invalido. Abre el link recibido por email.</p>
+          ) : null}
+          {error ? <p className="text-sm text-red-400">{error}</p> : null}
+          {message ? <p className="text-sm text-emerald-400">{message}</p> : null}
 
-        <button
-          type="submit"
-          disabled={loading || !token}
-          className="w-full rounded-lg bg-white px-4 py-2 font-medium text-black transition hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-70"
-        >
-          {loading ? "Actualizando..." : "Guardar contraseña"}
-        </button>
-      </form>
+          <button
+            type="submit"
+            disabled={loading || !token}
+            className="w-full rounded-lg bg-white px-4 py-2 font-medium text-black transition hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            {loading ? "Actualizando..." : "Guardar contrasena"}
+          </button>
+        </form>
+      </div>
     </main>
   );
 }

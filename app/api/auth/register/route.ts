@@ -1,6 +1,7 @@
-import { Role, UserStatus } from "@prisma/client";
+import { Role, SystemAssignmentMode, UserStatus } from "@prisma/client";
 import { defineRoute, parseJson } from "@/lib/http/route";
 import { ok } from "@/lib/http/response";
+import { forbidden } from "@/lib/http/errors";
 import { prisma } from "@/lib/db";
 import { registerSchema } from "@/lib/validation/schemas";
 import { checkRateLimit } from "@/lib/security/rate-limit";
@@ -12,6 +13,31 @@ export const POST = defineRoute(async (request, _context, requestId) => {
   const email = payload.email.toLowerCase();
   const { ip, userAgent } = requestMeta(request);
   const rate = checkRateLimit(`register:${email}:${ip}`, 5, 60_000);
+
+  const config = await prisma.systemConfig.upsert({
+    where: { id: "default" },
+    update: {},
+    create: {
+      id: "default",
+      assignmentMode: SystemAssignmentMode.AUTOMATIC,
+      darkModeEnabled: true,
+      editorSignupOpen: true,
+    },
+    select: { editorSignupOpen: true },
+  });
+
+  if (!config.editorSignupOpen) {
+    await appendAuditLog({
+      actorUserId: null,
+      action: "auth.register_blocked_by_config",
+      entityType: "SystemConfig",
+      entityId: "default",
+      metadataJson: { email, ip },
+      ip,
+      userAgent,
+    });
+    forbidden("No se requieren nuevos editores en este momento. Contactate mas tarde.");
+  }
 
   if (!rate.allowed) {
     await appendAuditLog({

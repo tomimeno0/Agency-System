@@ -34,6 +34,7 @@ export const PATCH = defineRoute(async (request, _context, requestId) => {
       id: "default",
       assignmentMode: payload.assignmentMode ?? SystemAssignmentMode.AUTOMATIC,
       darkModeEnabled: payload.darkModeEnabled ?? true,
+      editorSignupOpen: true,
     },
   });
 

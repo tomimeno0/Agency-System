@@ -20,6 +20,8 @@ type MovementItem = {
   clientName: string | null;
   taskId: string | null;
   taskTitle: string | null;
+  editorId: string | null;
+  editorName: string | null;
 };
 
 type MovementForm = {
@@ -33,6 +35,7 @@ type MovementForm = {
   notes: string;
   clientId: string;
   taskId: string;
+  editorId: string;
 };
 
 const EMPTY_FORM: MovementForm = {
@@ -46,6 +49,7 @@ const EMPTY_FORM: MovementForm = {
   notes: "",
   clientId: "",
   taskId: "",
+  editorId: "",
 };
 
 function startOfDay(date: Date): Date {
@@ -56,11 +60,13 @@ export function FinanceManager({
   initialMovements,
   clients,
   tasks,
+  editors,
   pendingApprovals,
 }: {
   initialMovements: MovementItem[];
   clients: Array<{ id: string; name: string }>;
   tasks: Array<{ id: string; title: string }>;
+  editors: Array<{ id: string; displayName: string }>;
   pendingApprovals: number;
 }) {
   const [period, setPeriod] = useState<"today" | "week" | "month" | "all">("month");
@@ -99,6 +105,7 @@ export function FinanceManager({
         movement.description,
         movement.subtype ?? "",
         movement.clientName ?? "",
+        movement.editorName ?? "",
         movement.taskTitle ?? "",
         movement.method ?? "",
       ]
@@ -203,6 +210,7 @@ export function FinanceManager({
       notes: movement.notes ?? "",
       clientId: movement.clientId ?? "",
       taskId: movement.taskId ?? "",
+      editorId: movement.editorId ?? "",
     });
     setError(null);
   }
@@ -228,6 +236,7 @@ export function FinanceManager({
           taskId: string | null;
           client?: { name: string; brandName: string | null } | null;
           task?: { title: string } | null;
+          editor?: { id: string; displayName: string } | null;
         }>;
       };
     };
@@ -249,6 +258,8 @@ export function FinanceManager({
         clientName: item.client?.brandName ?? item.client?.name ?? null,
         taskId: item.taskId,
         taskTitle: item.task?.title ?? null,
+        editorId: item.editor?.id ?? null,
+        editorName: item.editor?.displayName ?? null,
       })),
     );
   }
@@ -272,6 +283,7 @@ export function FinanceManager({
       notes: form.notes || undefined,
       clientId: form.clientId || undefined,
       taskId: form.taskId || undefined,
+      editorId: form.editorId || undefined,
     };
 
     const response = await fetch(
@@ -428,6 +440,18 @@ export function FinanceManager({
               </option>
             ))}
           </select>
+          <select
+            value={form.editorId}
+            onChange={(event) => setFormField("editorId", event.target.value)}
+            className="rounded-md border border-zinc-700 bg-[#0b0f14] px-3 py-2 text-sm"
+          >
+            <option value="">Sin editor</option>
+            {editors.map((editor) => (
+              <option key={editor.id} value={editor.id}>
+                {editor.displayName}
+              </option>
+            ))}
+          </select>
           <input
             value={form.method}
             onChange={(event) => setFormField("method", event.target.value)}
@@ -581,6 +605,7 @@ export function FinanceManager({
                 <th className="px-2 py-2 font-medium">Tipo</th>
                 <th className="px-2 py-2 font-medium">Monto</th>
                 <th className="px-2 py-2 font-medium">Descripcion</th>
+                <th className="px-2 py-2 font-medium">Editor</th>
                 <th className="px-2 py-2 font-medium">Cliente / Task</th>
                 <th className="px-2 py-2 font-medium">Estado</th>
                 <th className="px-2 py-2 font-medium">Acciones</th>
@@ -589,7 +614,7 @@ export function FinanceManager({
             <tbody>
               {visibleMovements.length === 0 ? (
                 <tr>
-                  <td className="px-2 py-3 text-zinc-400" colSpan={7}>
+                  <td className="px-2 py-3 text-zinc-400" colSpan={8}>
                     No hay movimientos en este filtro.
                   </td>
                 </tr>
@@ -603,6 +628,7 @@ export function FinanceManager({
                       <p>{movement.description}</p>
                       {movement.subtype ? <p className="text-xs text-zinc-400">{movement.subtype}</p> : null}
                     </td>
+                    <td className="px-2 py-2">{movement.editorName ?? "-"}</td>
                     <td className="px-2 py-2">
                       <p>{movement.clientName ?? "-"}</p>
                       <p className="text-xs text-zinc-400">{movement.taskTitle ?? "-"}</p>
