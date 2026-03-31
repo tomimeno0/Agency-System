@@ -4,7 +4,10 @@ import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { authOptions } from "@/lib/auth/options";
+import { NotificationsPanel } from "./notifications-panel";
 import { SessionCacheGuard } from "./session-cache-guard";
+
+export const dynamic = "force-dynamic";
 
 export default async function DashboardLayout({ children }: { children: ReactNode }) {
   const session = await getServerSession(authOptions);
@@ -19,7 +22,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   const navItems =
     isOwner || isAdmin
       ? [
-          { href: "/dashboard", label: "Resumen" },
+          { href: "/dashboard", label: "General" },
           { href: "/dashboard/clients", label: "Clientes" },
           { href: "/dashboard/workers", label: "Workers" },
           { href: "/dashboard/tasks", label: "Tareas" },
@@ -30,7 +33,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
           { href: "/dashboard/security", label: "Seguridad" },
         ]
       : [
-          { href: "/dashboard", label: "Resumen" },
+          { href: "/dashboard", label: "General" },
           { href: "/dashboard/tasks", label: "Mis tareas" },
           { href: "/dashboard/submissions", label: "Entregas" },
           { href: "/dashboard/earnings", label: "Mis ingresos" },
@@ -45,6 +48,9 @@ export default async function DashboardLayout({ children }: { children: ReactNod
       <div className="flex w-full gap-5 px-2 py-5 md:gap-7 md:px-4 lg:px-5">
         <aside className="h-fit w-full rounded-xl border border-zinc-800 bg-[#111827] p-5 md:sticky md:top-5 md:w-72">
           <p className="mb-4 text-base font-semibold tracking-wide text-[#e5e7eb]">Dashboard</p>
+          <div className="mb-4">
+            <NotificationsPanel />
+          </div>
           <nav className="space-y-1">
             {navItems.map((item) => (
               <Link

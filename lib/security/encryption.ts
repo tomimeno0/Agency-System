@@ -16,19 +16,23 @@ function fromUrlBase64(value: string): Buffer {
   return Buffer.from(value, "base64url");
 }
 
-export function encryptField(plainText: string): EncryptedValue {
+export function encryptField(plainText: string, keyVersion = env.APP_ENCRYPTION_KEY_VERSION): EncryptedValue {
+  const selectedKey = env.encryptionKeyRing.get(keyVersion);
+  if (!selectedKey) {
+    throw new Error(`Missing encryption key for version ${keyVersion}`);
+  }
   const iv = randomBytes(12);
-  const cipher = createCipheriv(ALGO, env.encryptionKey, iv);
+  const cipher = createCipheriv(ALGO, selectedKey, iv);
   const encrypted = Buffer.concat([cipher.update(plainText, "utf8"), cipher.final()]);
   const authTag = cipher.getAuthTag();
 
   return {
     ciphertext: `${toUrlBase64(iv)}.${toUrlBase64(authTag)}.${toUrlBase64(encrypted)}`,
-    keyVersion: env.APP_ENCRYPTION_KEY_VERSION,
+    keyVersion,
   };
 }
 
-export function decryptField(ciphertext: string): string {
+export function decryptField(ciphertext: string, keyVersion = env.APP_ENCRYPTION_KEY_VERSION): string {
   const [ivPart, tagPart, encryptedPart] = ciphertext.split(".");
   if (!ivPart || !tagPart || !encryptedPart) {
     throw new Error("Invalid encrypted field format");
@@ -38,7 +42,11 @@ export function decryptField(ciphertext: string): string {
   const authTag = fromUrlBase64(tagPart);
   const encrypted = fromUrlBase64(encryptedPart);
 
-  const decipher = createDecipheriv(ALGO, env.encryptionKey, iv);
+  const selectedKey = env.encryptionKeyRing.get(keyVersion);
+  if (!selectedKey) {
+    throw new Error(`Missing encryption key for version ${keyVersion}`);
+  }
+  const decipher = createDecipheriv(ALGO, selectedKey, iv);
   decipher.setAuthTag(authTag);
 
   const plain = Buffer.concat([decipher.update(encrypted), decipher.final()]);

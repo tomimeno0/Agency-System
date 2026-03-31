@@ -6,6 +6,7 @@ import { authOptions } from "@/lib/auth/options";
 import { prisma } from "@/lib/db";
 import { isCompletedState, toHumanPriority, toHumanTaskStage } from "@/lib/presentation/tasks";
 import { continueAssignmentFlow, markExpiredOffers } from "@/lib/services/assignment-engine";
+import { evaluateSlaAlertsForUser } from "@/lib/services/sla-alerts";
 import { OwnerControls } from "./owner-controls";
 import { SignOutButton } from "./signout-button";
 
@@ -30,20 +31,21 @@ function alertClass(level: AlertLevel): string {
 }
 
 export default async function DashboardPage() {
-  const expiredTaskIds = await markExpiredOffers();
-  for (const taskId of expiredTaskIds) {
-    await continueAssignmentFlow(taskId, null);
-  }
-
   const session = await getServerSession(authOptions);
   if (!session?.user) {
     redirect("/login");
   }
 
   const actor = session.user;
+  const expiredTaskIds = await markExpiredOffers();
+  for (const taskId of expiredTaskIds) {
+    await continueAssignmentFlow(taskId, actor.id);
+  }
+  await evaluateSlaAlertsForUser(actor);
   const now = new Date();
   const nowTs = now.getTime();
   const in24h = new Date(nowTs + 24 * 60 * 60 * 1000);
+  const in6h = new Date(nowTs + 6 * 60 * 60 * 1000);
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
   if (actor.role === Role.EDITOR) {
@@ -126,6 +128,14 @@ export default async function DashboardPage() {
     const dueSoon = activeTasks.filter(
       (task) => Boolean(task.deadlineAt && task.deadlineAt >= now && task.deadlineAt <= in24h),
     ).length;
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const tomorrowStart = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
+    const dueToday = activeTasks.filter(
+      (task) => Boolean(task.deadlineAt && task.deadlineAt >= todayStart && task.deadlineAt < tomorrowStart),
+    ).length;
+    const urgentNow = activeTasks.filter(
+      (task) => Boolean(task.deadlineAt && task.deadlineAt <= in6h),
+    ).length;
     const previewTasks = activeTasks.slice(0, 5);
     const urgentDeadlines = [...activeTasks]
       .filter((task) => Boolean(task.deadlineAt))
@@ -136,11 +146,29 @@ export default async function DashboardPage() {
       <main className="w-full px-2 py-2 text-white md:px-4">
         <header className="mb-6 flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-semibold">Resumen</h1>
+            <h1 className="text-3xl font-semibold">General</h1>
             <p className="text-sm text-zinc-400">Hola, {actor.name ?? actor.email}</p>
           </div>
           <SignOutButton />
         </header>
+
+        <section className="mb-5 rounded-xl border border-zinc-800 bg-[#111827] p-4">
+          <h2 className="mb-3 text-lg font-semibold">Trabajo ahora</h2>
+          <div className="grid gap-3 md:grid-cols-3">
+            <Link href="/dashboard/tasks?deadline=vencidas" className="rounded-md border border-red-700 bg-red-950/20 px-3 py-2">
+              <p className="text-xs text-red-300">Urgente</p>
+              <p className="text-2xl font-semibold text-red-100">{urgentNow}</p>
+            </Link>
+            <Link href="/dashboard/tasks?deadline=hoy" className="rounded-md border border-amber-700 bg-amber-950/20 px-3 py-2">
+              <p className="text-xs text-amber-300">Vence hoy</p>
+              <p className="text-2xl font-semibold text-amber-100">{dueToday}</p>
+            </Link>
+            <Link href="/dashboard/tasks?estado=pendiente" className="rounded-md border border-blue-700 bg-blue-950/20 px-3 py-2">
+              <p className="text-xs text-blue-300">Pendiente de aceptar</p>
+              <p className="text-2xl font-semibold text-blue-100">{pendingAccept}</p>
+            </Link>
+          </div>
+        </section>
 
         <section className="mb-5 rounded-xl border border-zinc-800 bg-[#111827] p-4">
           <h2 className="mb-3 text-lg font-semibold">Alertas</h2>
@@ -259,13 +287,14 @@ export default async function DashboardPage() {
     },
   });
 
-  const [tasks, workers, pendingApprovals, monthlyMovements] = await Promise.all([
+  const [tasks, workers, pendingApprovals, monthlyMovements, totalReviews, correctionReviews] = await Promise.all([
     prisma.task.findMany({
       include: {
         assignments: {
           select: {
             editorId: true,
             status: true,
+            assignedAt: true,
             completedAt: true,
             editor: { select: { id: true, displayName: true } },
           },
@@ -277,7 +306,7 @@ export default async function DashboardPage() {
     }),
     prisma.user.findMany({
       where: { role: Role.EDITOR },
-      select: { id: true, status: true, lastLoginAt: true },
+      select: { id: true, displayName: true, status: true, lastLoginAt: true },
       orderBy: { createdAt: "asc" },
       take: 400,
     }),
@@ -287,6 +316,8 @@ export default async function DashboardPage() {
       select: { type: true, amount: true, status: true },
       take: 1000,
     }),
+    prisma.review.count(),
+    prisma.review.count({ where: { decision: "NEEDS_CORRECTION" } }),
   ]);
 
   const activeTasks = tasks.filter((task) => !isCompletedState(task.state));
@@ -301,12 +332,32 @@ export default async function DashboardPage() {
     (task) => task.state === TaskState.IN_REVIEW && task.updatedAt.getTime() < nowTs - 48 * 60 * 60 * 1000,
   );
   const dueSoon = activeTasks.filter((task) => task.deadlineAt && task.deadlineAt >= now && task.deadlineAt <= in24h);
+  const urgentNow = activeTasks.filter((task) => task.deadlineAt && task.deadlineAt <= in6h).length;
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const tomorrowStart = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
+  const dueToday = activeTasks.filter(
+    (task) => Boolean(task.deadlineAt && task.deadlineAt >= todayStart && task.deadlineAt < tomorrowStart),
+  ).length;
+  const waitingAcceptance = tasks.filter((task) => {
+    const hasEditor =
+      Boolean(task.directEditorId) ||
+      task.assignments.some(
+        (assignment) => assignment.status === AssignmentStatus.ASSIGNED || assignment.status === AssignmentStatus.ACCEPTED,
+      );
+    return (
+      toHumanTaskStage({
+        state: task.state,
+        assignmentFlowStatus: task.assignmentFlowStatus,
+        hasEditor,
+      }) === "Esperando aceptacion"
+    );
+  }).length;
 
   const flow: Record<string, number> = {
     "Sin asignar": 0,
     "Esperando aceptacion": 0,
     "En edicion": 0,
-    "En revision": 0,
+    "Para revisar": 0,
     Completada: 0,
   };
   for (const task of tasks) {
@@ -359,6 +410,52 @@ export default async function DashboardPage() {
     else saturated += 1;
   }
   const riskWorkers = Array.from(failedDeadlinesByWorker.values()).filter((count) => count > 0).length;
+  const topLoadedWorker = workers
+    .map((worker) => ({
+      id: worker.id,
+      name: worker.displayName,
+      load: activeLoadByWorker.get(worker.id) ?? 0,
+    }))
+    .sort((a, b) => b.load - a.load)[0] ?? null;
+
+  const finishedAssignments = tasks.flatMap((task) =>
+    task.assignments
+      .filter((assignment) => assignment.completedAt !== null)
+      .map((assignment) => ({
+        assignedAt: assignment.assignedAt,
+        completedAt: assignment.completedAt,
+      })),
+  );
+  const averageDeliveryMinutes =
+    finishedAssignments.length > 0
+      ? Math.round(
+          finishedAssignments.reduce((sum, item) => {
+            if (!item.completedAt) return sum;
+            const duration = item.completedAt.getTime() - item.assignedAt.getTime();
+            return sum + Math.max(duration, 0);
+          }, 0) /
+            finishedAssignments.length /
+            (1000 * 60),
+        )
+      : 0;
+
+  const timedAssignments = tasks.flatMap((task) =>
+    task.assignments
+      .filter((assignment) => assignment.completedAt !== null && task.deadlineAt !== null)
+      .map((assignment) => ({
+        completedAt: assignment.completedAt as Date,
+        deadlineAt: task.deadlineAt as Date,
+      })),
+  );
+  const onTimeRate =
+    timedAssignments.length > 0
+      ? Math.round(
+          (timedAssignments.filter((item) => item.completedAt.getTime() <= item.deadlineAt.getTime()).length /
+            timedAssignments.length) *
+            100,
+        )
+      : 0;
+  const returnRate = totalReviews > 0 ? Math.round((correctionReviews / totalReviews) * 100) : 0;
 
   const monthlyIncome = monthlyMovements
     .filter((item) => item.type === "INCOME" && item.status !== "CANCELLED")
@@ -413,7 +510,7 @@ export default async function DashboardPage() {
     <main className="w-full px-2 py-2 text-white md:px-4">
       <header className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold">Resumen operativo</h1>
+          <h1 className="text-2xl font-semibold">General</h1>
           <p className="text-sm text-zinc-400">Estado real del negocio y alertas accionables</p>
         </div>
         <SignOutButton />
@@ -434,6 +531,24 @@ export default async function DashboardPage() {
             ))}
           </div>
         )}
+      </section>
+
+      <section className="mb-5 rounded-xl border border-zinc-800 bg-[#111827] p-4">
+        <h2 className="mb-3 text-lg font-semibold">Trabajo ahora</h2>
+        <div className="grid gap-3 md:grid-cols-3">
+          <Link href="/dashboard/deadlines?filtro=vencidas" className="rounded-md border border-red-700 bg-red-950/20 px-3 py-2">
+            <p className="text-xs text-red-300">Urgente</p>
+            <p className="text-2xl font-semibold text-red-100">{urgentNow}</p>
+          </Link>
+          <Link href="/dashboard/deadlines?filtro=hoy" className="rounded-md border border-amber-700 bg-amber-950/20 px-3 py-2">
+            <p className="text-xs text-amber-300">Vence hoy</p>
+            <p className="text-2xl font-semibold text-amber-100">{dueToday}</p>
+          </Link>
+          <Link href="/dashboard/tasks?estado=esperando_aceptacion" className="rounded-md border border-blue-700 bg-blue-950/20 px-3 py-2">
+            <p className="text-xs text-blue-300">Pendiente de aceptar</p>
+            <p className="text-2xl font-semibold text-blue-100">{waitingAcceptance}</p>
+          </Link>
+        </div>
       </section>
 
       {isOwner ? (
@@ -488,6 +603,30 @@ export default async function DashboardPage() {
               <p className="text-zinc-400">Con riesgo</p>
               <p className="text-xl font-semibold">{riskWorkers}</p>
             </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="mt-5 rounded-xl border border-zinc-800 bg-[#111827] p-4">
+        <h3 className="text-lg font-semibold">Metricas accionables</h3>
+        <div className="mt-3 grid gap-3 md:grid-cols-4 text-sm">
+          <div className="rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2">
+            <p className="text-zinc-400">Tiempo medio de entrega</p>
+            <p className="text-xl font-semibold">{averageDeliveryMinutes} min</p>
+          </div>
+          <div className="rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2">
+            <p className="text-zinc-400">Tasa de devolucion</p>
+            <p className="text-xl font-semibold">{returnRate}%</p>
+          </div>
+          <div className="rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2">
+            <p className="text-zinc-400">Puntualidad</p>
+            <p className="text-xl font-semibold">{onTimeRate}%</p>
+          </div>
+          <div className="rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2">
+            <p className="text-zinc-400">Carga maxima por editor</p>
+            <p className="text-xl font-semibold">
+              {topLoadedWorker ? `${topLoadedWorker.load} (${topLoadedWorker.name})` : "0"}
+            </p>
           </div>
         </div>
       </section>

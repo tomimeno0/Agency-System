@@ -3,8 +3,9 @@ import { defineRoute, parseJson } from "@/lib/http/route";
 import { ok } from "@/lib/http/response";
 import { forbidden } from "@/lib/http/errors";
 import { prisma } from "@/lib/db";
+import { env } from "@/lib/env";
 import { registerSchema } from "@/lib/validation/schemas";
-import { checkRateLimit } from "@/lib/security/rate-limit";
+import { checkRateLimitAdvanced } from "@/lib/security/rate-limit";
 import { hashPassword } from "@/lib/security/password";
 import { appendAuditLog, requestMeta } from "@/lib/services/audit";
 
@@ -12,7 +13,24 @@ export const POST = defineRoute(async (request, _context, requestId) => {
   const payload = registerSchema.parse(await parseJson(request));
   const email = payload.email.toLowerCase();
   const { ip, userAgent } = requestMeta(request);
-  const rate = checkRateLimit(`register:${email}:${ip}`, 5, 60_000);
+  const rate = checkRateLimitAdvanced({
+    key: `register:${email}:${ip}`,
+    limit: 5,
+    windowMs: 60_000,
+    blockMs: 10 * 60_000,
+  });
+  if (env.ANTI_BOT_ENABLED && payload.honeypot) {
+    await appendAuditLog({
+      actorUserId: null,
+      action: "auth.register_honeypot_triggered",
+      entityType: "User",
+      entityId: email,
+      metadataJson: { ip },
+      ip,
+      userAgent,
+    });
+    return ok({ accepted: true }, requestId);
+  }
 
   const config = await prisma.systemConfig.upsert({
     where: { id: "default" },

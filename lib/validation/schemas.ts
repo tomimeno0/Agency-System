@@ -40,6 +40,11 @@ const passwordPolicySchema = z
   .string()
   .min(7, "Debe tener al menos 7 caracteres");
 
+const dateTimeInputSchema = z
+  .string()
+  .min(1)
+  .refine((value) => !Number.isNaN(Date.parse(value)), "Fecha/hora invalida");
+
 export const userCreateSchema = z.object({
   email: z.string().email(),
   password: passwordPolicySchema,
@@ -95,7 +100,7 @@ export const taskCreateSchema = z.object({
   title: z.string().min(2).max(160),
   description: z.string().max(3000).optional(),
   instructions: z.string().max(8000).optional(),
-  deadlineAt: z.string().datetime().optional(),
+  deadlineAt: dateTimeInputSchema.optional(),
   priority: taskPrioritySchema.default(TaskPriority.MEDIUM),
   estimatedDurationMinutes: z.number().int().positive().optional(),
   assignedMode: z.enum(["manual", "offered"]).default("manual"),
@@ -111,7 +116,7 @@ export const taskUpdateSchema = taskCreateSchema
     projectId: cuidSchema.nullable().optional(),
     clientId: cuidSchema.nullable().optional(),
     directEditorId: cuidSchema.nullable().optional(),
-    deadlineAt: z.string().datetime().nullable().optional(),
+    deadlineAt: dateTimeInputSchema.nullable().optional(),
   });
 
 export const assignmentCreateSchema = z.object({
@@ -135,10 +140,23 @@ export const submissionCreateSchema = z.object({
   notes: z.string().max(3000).optional(),
 });
 
-export const reviewCreateSchema = z.object({
-  decision: reviewDecisionSchema,
-  comments: z.string().max(3000).optional(),
-});
+export const reviewCreateSchema = z
+  .object({
+    decision: z.preprocess(
+      (value) => (typeof value === "string" ? value.toUpperCase() : value),
+      reviewDecisionSchema,
+    ),
+    comments: z.string().max(3000).optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.decision === ReviewDecision.NEEDS_CORRECTION && !value.comments?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["comments"],
+        message: "Debes agregar un motivo al devolver la tarea.",
+      });
+    }
+  });
 
 export const financeCalculateSchema = z.object({
   taskAssignmentId: cuidSchema,
@@ -150,7 +168,7 @@ export const financialMovementCreateSchema = z.object({
   type: financialMovementTypeSchema,
   subtype: z.string().max(120).optional(),
   amount: z.number().positive(),
-  occurredAt: z.string().datetime().optional(),
+  occurredAt: dateTimeInputSchema.optional(),
   description: z.string().min(2).max(300),
   method: z.string().max(80).optional(),
   notes: z.string().max(2000).optional(),
@@ -236,4 +254,19 @@ export const registerSchema = z.object({
   fullName: z.string().min(2).max(120).optional(),
   country: z.string().max(80).optional(),
   timezone: z.string().min(2).max(80).optional(),
+  honeypot: z.string().max(0).optional(),
+});
+
+export const twoFactorRequestSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(1),
+});
+
+export const twoFactorVerifySchema = z.object({
+  challengeId: cuidSchema,
+  code: z.string().regex(/^\d{6}$/),
+});
+
+export const twoFactorResendSchema = z.object({
+  challengeId: cuidSchema,
 });

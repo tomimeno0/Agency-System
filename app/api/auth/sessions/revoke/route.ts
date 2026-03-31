@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { requireSessionUser } from "@/lib/auth/session";
 import { sessionRevokeSchema } from "@/lib/validation/schemas";
 import { appendAuditLog, requestMeta } from "@/lib/services/audit";
+import { dispatchSecurityAlert } from "@/lib/services/security-alerts";
 
 function getCurrentSessionToken(request: Request): string | null {
   const cookieHeader = request.headers.get("cookie") ?? "";
@@ -27,8 +28,16 @@ export const POST = defineRoute(async (request, _context, requestId) => {
 
   let revoked = 0;
   if (payload.scope === "all") {
-    const result = await prisma.session.deleteMany({ where: { userId: actor.id } });
-    revoked = result.count;
+    const result = await prisma.$transaction(async (tx) => {
+      const deleted = await tx.session.deleteMany({ where: { userId: actor.id } });
+      const user = await tx.user.update({
+        where: { id: actor.id },
+        data: { sessionVersion: { increment: 1 } },
+        select: { sessionVersion: true },
+      });
+      return { deleted: deleted.count, nextVersion: user.sessionVersion };
+    });
+    revoked = result.deleted;
   } else {
     const sessionToken = getCurrentSessionToken(request);
     if (sessionToken) {
@@ -52,6 +61,14 @@ export const POST = defineRoute(async (request, _context, requestId) => {
     ip,
     userAgent,
   });
+
+  if (payload.scope === "all") {
+    await dispatchSecurityAlert({
+      title: "Revocacion global de sesiones",
+      message: `El usuario ${actor.email ?? actor.id} cerro todas sus sesiones activas.`,
+      metadataJson: { actorUserId: actor.id, revoked },
+    });
+  }
 
   const response = ok({ revoked }, requestId);
   const secure = process.env.NODE_ENV === "production";

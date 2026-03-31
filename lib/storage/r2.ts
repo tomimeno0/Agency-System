@@ -3,6 +3,7 @@ import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { env } from "@/lib/env";
 import { unprocessable } from "@/lib/http/errors";
+import { normalizeDeclaredMime } from "@/lib/security/file-validation";
 
 const ALLOWED_MIME = new Set([
   "video/mp4",
@@ -11,6 +12,7 @@ const ALLOWED_MIME = new Set([
   "audio/mpeg",
   "audio/wav",
   "application/zip",
+  "application/pdf",
   "application/octet-stream",
 ]);
 
@@ -69,14 +71,18 @@ function buildLocalSignedPath(kind: "upload" | "download", input: {
   return `${env.NEXTAUTH_URL}${basePath}?${query.toString()}`;
 }
 
-export function validateUpload(mimeType: string, sizeBytes: number): void {
-  if (!ALLOWED_MIME.has(mimeType)) {
+export function validateUpload(mimeType: string, sizeBytes: number, fileName = ""): string {
+  const normalizedMime = normalizeDeclaredMime(fileName || "file.bin", mimeType);
+
+  if (!ALLOWED_MIME.has(normalizedMime)) {
     unprocessable("Unsupported file MIME type");
   }
 
   if (sizeBytes > env.UPLOAD_MAX_BYTES) {
     unprocessable(`File exceeds max size of ${env.UPLOAD_MAX_BYTES} bytes`);
   }
+
+  return normalizedMime;
 }
 
 export function buildStorageKey(fileName: string): string {

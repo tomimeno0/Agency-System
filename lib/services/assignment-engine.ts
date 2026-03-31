@@ -127,6 +127,19 @@ export async function markExpiredOffers(taskId?: string) {
     },
   });
 
+  for (const pendingOffer of pendingOffers) {
+    await appendAuditLog({
+      actorUserId: null,
+      action: "tasks.auto_offer_expired",
+      entityType: "Task",
+      entityId: pendingOffer.taskId,
+      metadataJson: {
+        assignmentId: pendingOffer.id,
+        expiredAt: now.toISOString(),
+      },
+    });
+  }
+
   return [...new Set(pendingOffers.map((item) => item.taskId))];
 }
 
@@ -209,6 +222,18 @@ export async function startAutomaticAssignment(taskId: string, actorUserId: stri
         offerExpiresAt: null,
       },
     });
+    if (actorUserId) {
+      await appendAuditLog({
+        actorUserId,
+        action: "tasks.auto_assignment_no_candidates",
+        entityType: "Task",
+        entityId: taskId,
+        metadataJson: {
+          attempt: nextRound,
+          excludedEditorIds: task.offeredEditorIds,
+        },
+      });
+    }
     return;
   }
 
@@ -246,6 +271,18 @@ async function splitTaskAndReassign(taskId: string, actorUserId: string | null) 
         offerExpiresAt: null,
       },
     });
+    if (actorUserId) {
+      await appendAuditLog({
+        actorUserId,
+        action: "tasks.auto_assignment_split_not_possible",
+        entityType: "Task",
+        entityId: task.id,
+        metadataJson: {
+          totalVideos,
+          chunkSize,
+        },
+      });
+    }
     return;
   }
 

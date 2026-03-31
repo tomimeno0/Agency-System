@@ -1,16 +1,48 @@
-import { AssignmentMode, AssignmentStatus, NotificationType, Role, TaskAssignmentFlowStatus, TaskState } from "@prisma/client";
+import {
+  AssignmentMode,
+  AssignmentStatus,
+  NotificationType,
+  Prisma,
+  Role,
+  TaskAssignmentFlowStatus,
+  TaskState,
+} from "@prisma/client";
 import { defineRoute, parseJson } from "@/lib/http/route";
 import { ok } from "@/lib/http/response";
 import { forbidden } from "@/lib/http/errors";
 import { prisma } from "@/lib/db";
 import { requireSessionUser } from "@/lib/auth/session";
+import { assertTaskOwnershipAccess } from "@/lib/auth/policy";
 import { taskUpdateSchema } from "@/lib/validation/schemas";
 import { appendAuditLog, requestMeta } from "@/lib/services/audit";
 import { createNotification } from "@/lib/services/notifications";
 
+const ACK_REQUIRED_FIELDS = new Set([
+  "description",
+  "instructions",
+  "deadlineAt",
+  "priority",
+  "clientId",
+]);
+
+function normalizeDiffValue(value: unknown): Prisma.InputJsonValue {
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === "bigint") return value.toString();
+  if (value === undefined || value === null) return "__null__";
+  if (typeof value === "object") {
+    try {
+      return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+    } catch {
+      return String(value);
+    }
+  }
+  return value as Prisma.InputJsonValue;
+}
+
 export const GET = defineRoute(async (_request, context, requestId) => {
   const actor = await requireSessionUser();
   const { taskId } = await context.params;
+  await assertTaskOwnershipAccess(actor, taskId);
 
   const task = await prisma.task.findUniqueOrThrow({
     where: { id: taskId },
@@ -60,20 +92,6 @@ export const GET = defineRoute(async (_request, context, requestId) => {
     },
   });
 
-  if (
-    actor.role === Role.EDITOR &&
-    task.directEditorId !== actor.id &&
-    !task.assignments.some(
-      (assignment) =>
-        assignment.editorId === actor.id &&
-        (assignment.status === AssignmentStatus.ASSIGNED ||
-          assignment.status === AssignmentStatus.ACCEPTED ||
-          assignment.status === AssignmentStatus.COMPLETED),
-    )
-  ) {
-    forbidden("Editors can only access their own tasks");
-  }
-
   return ok(task, requestId);
 });
 
@@ -89,7 +107,26 @@ export const PATCH = defineRoute(async (request, context, requestId) => {
 
   const existing = await prisma.task.findUniqueOrThrow({
     where: { id: taskId },
-    select: { id: true, state: true, directEditorId: true },
+    select: {
+      id: true,
+      title: true,
+      description: true,
+      instructions: true,
+      clientId: true,
+      directEditorId: true,
+      deadlineAt: true,
+      priority: true,
+      assignmentMode: true,
+      state: true,
+      assignments: {
+        where: {
+          status: {
+            in: [AssignmentStatus.ASSIGNED, AssignmentStatus.ACCEPTED, AssignmentStatus.COMPLETED],
+          },
+        },
+        select: { editorId: true },
+      },
+    },
   });
 
   const nextDirectEditorId = hasDirectEditorField ? (payload.directEditorId ?? null) : undefined;
@@ -239,47 +276,95 @@ export const PATCH = defineRoute(async (request, context, requestId) => {
     });
   }
 
-  const changedFields = Object.keys(payload);
-  if (changedFields.length > 0) {
-    const notifyEditors = await prisma.task.findUnique({
-      where: { id: taskId },
-      select: {
-        title: true,
-        directEditorId: true,
-        assignments: {
-          where: {
-            status: {
-              in: [
-                AssignmentStatus.ASSIGNED,
-                AssignmentStatus.ACCEPTED,
-                AssignmentStatus.COMPLETED,
-              ],
-            },
+  const changedFields = Object.entries(payload)
+    .filter(([, value]) => value !== undefined)
+    .map(([field]) => field);
+
+  if (shouldAssignEditor || shouldUnassignEditor) {
+    if (!changedFields.includes("directEditorId")) changedFields.push("directEditorId");
+    if (!changedFields.includes("assignmentMode")) changedFields.push("assignmentMode");
+    if (!changedFields.includes("state")) changedFields.push("state");
+  }
+
+  const notifyEditors = await prisma.task.findUnique({
+    where: { id: taskId },
+    select: {
+      title: true,
+      state: true,
+      directEditorId: true,
+      clientId: true,
+      description: true,
+      instructions: true,
+      deadlineAt: true,
+      priority: true,
+      assignmentMode: true,
+      assignments: {
+        where: {
+          status: {
+            in: [
+              AssignmentStatus.ASSIGNED,
+              AssignmentStatus.ACCEPTED,
+              AssignmentStatus.COMPLETED,
+            ],
           },
-          select: { editorId: true },
         },
+        select: { editorId: true },
       },
+    },
+  });
+
+  if (notifyEditors && changedFields.length > 0) {
+    const recipients = new Set<string>();
+    if (notifyEditors.directEditorId) recipients.add(notifyEditors.directEditorId);
+    for (const assignment of notifyEditors.assignments) {
+      recipients.add(assignment.editorId);
+    }
+
+    const ackEligibleStates: TaskState[] = [
+      TaskState.ACCEPTED,
+      TaskState.IN_EDITING,
+      TaskState.UPLOADED,
+      TaskState.IN_REVIEW,
+      TaskState.NEEDS_CORRECTION,
+    ];
+
+    const requiresAck =
+      ackEligibleStates.includes(existing.state) &&
+      changedFields.some((field) => ACK_REQUIRED_FIELDS.has(field)) &&
+      recipients.size > 0;
+
+    const beforeSnapshot: Record<string, Prisma.InputJsonValue> = {};
+    const afterSnapshot: Record<string, Prisma.InputJsonValue> = {};
+    for (const field of changedFields) {
+      beforeSnapshot[field] = normalizeDiffValue((existing as Record<string, unknown>)[field]);
+      afterSnapshot[field] = normalizeDiffValue((notifyEditors as Record<string, unknown>)[field]);
+    }
+
+    const changeLog = await prisma.taskChangeLog.create({
+      data: {
+        taskId,
+        changedById: actor.id,
+        beforeJson: beforeSnapshot,
+        afterJson: afterSnapshot,
+        changedFields,
+        requiresAck,
+      },
+      select: { id: true, requiresAck: true },
     });
 
-    if (notifyEditors) {
-      const recipients = new Set<string>();
-      if (notifyEditors.directEditorId) recipients.add(notifyEditors.directEditorId);
-      for (const assignment of notifyEditors.assignments) {
-        recipients.add(assignment.editorId);
-      }
-
-      for (const editorId of recipients) {
-        await createNotification({
-          userId: editorId,
-          type: NotificationType.SYSTEM,
-          title: "Tarea actualizada",
-          message: `La tarea "${notifyEditors.title}" fue editada. Revisa cambios de instrucciones y deadline.`,
-          metadataJson: {
-            taskId,
-            changedFields,
-          },
-        });
-      }
+    for (const editorId of recipients) {
+      await createNotification({
+        userId: editorId,
+        type: NotificationType.SYSTEM,
+        title: requiresAck ? "Tarea actualizada (requiere confirmacion)" : "Tarea actualizada",
+        message: `La tarea "${notifyEditors.title}" fue editada. Revisa cambios y confirma lectura.`,
+        metadataJson: {
+          taskId,
+          changeLogId: changeLog.id,
+          requiresAck: changeLog.requiresAck,
+          changedFields,
+        },
+      });
     }
   }
 

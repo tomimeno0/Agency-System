@@ -7,9 +7,16 @@ type Props = {
   assignmentId: string | null;
   pendingAcceptance: boolean;
   canDeliver: boolean;
+  mustAcknowledgeChanges: boolean;
 };
 
-export function EditorDeliveryPanel({ taskId, assignmentId, pendingAcceptance, canDeliver }: Props) {
+export function EditorDeliveryPanel({
+  taskId,
+  assignmentId,
+  pendingAcceptance,
+  canDeliver,
+  mustAcknowledgeChanges,
+}: Props) {
   const [decisionLoading, setDecisionLoading] = useState<"accept" | "reject" | null>(null);
   const [deliveryLoading, setDeliveryLoading] = useState(false);
   const [files, setFiles] = useState<FileList | null>(null);
@@ -104,7 +111,7 @@ export function EditorDeliveryPanel({ taskId, assignmentId, pendingAcceptance, c
       setError("Esta tarea no tiene asignacion activa para tu cuenta.");
       return;
     }
-    if (!canDeliver) {
+    if (!canDeliver || mustAcknowledgeChanges) {
       setError("La tarea no esta en un estado entregable.");
       return;
     }
@@ -193,12 +200,17 @@ export function EditorDeliveryPanel({ taskId, assignmentId, pendingAcceptance, c
         <button
           type="button"
           onClick={submitDelivery}
-          disabled={deliveryLoading || !canDeliver}
+          disabled={deliveryLoading || !canDeliver || mustAcknowledgeChanges}
           className="mt-3 rounded-md border border-zinc-700 bg-zinc-900 px-4 py-2 text-sm hover:bg-zinc-800 disabled:opacity-60"
         >
           {deliveryLoading ? "Enviando..." : "Entregar"}
         </button>
-        {!canDeliver ? (
+        {mustAcknowledgeChanges ? (
+          <p className="mt-2 text-xs text-amber-300">
+            Debes confirmar lectura de los cambios recientes antes de volver a entregar.
+          </p>
+        ) : null}
+        {!canDeliver && !mustAcknowledgeChanges ? (
           <p className="mt-2 text-xs text-zinc-400">
             Esta tarea solo se puede entregar cuando este en proceso o en correccion.
           </p>

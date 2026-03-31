@@ -1,56 +1,50 @@
-import { Role } from "@prisma/client";
 import { defineRoute, parseJson } from "@/lib/http/route";
 import { ok } from "@/lib/http/response";
 import { badRequest, forbidden } from "@/lib/http/errors";
 import { requireSessionUser } from "@/lib/auth/session";
 import { uploadUrlSchema } from "@/lib/validation/schemas";
 import { buildStorageKey, createSignedUploadUrl, validateUpload } from "@/lib/storage/r2";
-import { prisma } from "@/lib/db";
+import { assertAssignmentOwnershipAccess, assertTaskOwnershipAccess } from "@/lib/auth/policy";
 import { appendAuditLog, requestMeta } from "@/lib/services/audit";
+import { checkRateLimitAdvanced } from "@/lib/security/rate-limit";
+import { Role } from "@prisma/client";
 
 export const POST = defineRoute(async (request, _context, requestId) => {
   const actor = await requireSessionUser();
   const payload = uploadUrlSchema.parse(await parseJson(request));
+  const { ip, userAgent } = requestMeta(request);
+
+  const rate = checkRateLimitAdvanced({
+    key: `files:upload-url:${actor.id}:${ip ?? "unknown"}`,
+    limit: 40,
+    windowMs: 60_000,
+    blockMs: 10 * 60_000,
+  });
+  if (!rate.allowed) {
+    forbidden("Demasiados intentos de subida. Intenta nuevamente en unos minutos.");
+  }
 
   if (!payload.taskId && !payload.assignmentId) {
     badRequest("Either taskId or assignmentId is required");
   }
 
-  validateUpload(payload.mimeType, payload.sizeBytes);
+  const normalizedMime = validateUpload(payload.mimeType, payload.sizeBytes, payload.fileName);
 
-  if (payload.assignmentId) {
-    const assignment = await prisma.taskAssignment.findUniqueOrThrow({
-      where: { id: payload.assignmentId },
-      select: { editorId: true },
-    });
-
-    if (actor.role === Role.EDITOR && assignment.editorId !== actor.id) {
-      forbidden("Editor can only upload files for own assignments");
-    }
+  if (payload.assignmentId && actor.role === Role.EDITOR) {
+    await assertAssignmentOwnershipAccess(actor, payload.assignmentId);
   }
 
   if (payload.taskId && actor.role === Role.EDITOR) {
-    const hasTaskAccess = await prisma.taskAssignment.findFirst({
-      where: {
-        taskId: payload.taskId,
-        editorId: actor.id,
-      },
-      select: { id: true },
-    });
-
-    if (!hasTaskAccess) {
-      forbidden("Editor can only upload files for own tasks");
-    }
+    await assertTaskOwnershipAccess(actor, payload.taskId);
   }
 
   const storageKey = buildStorageKey(payload.fileName);
   const uploadUrl = await createSignedUploadUrl({
     storageKey,
-    mimeType: payload.mimeType,
+    mimeType: normalizedMime,
     expiresInSeconds: 300,
   });
 
-  const { ip, userAgent } = requestMeta(request);
   await appendAuditLog({
     actorUserId: actor.id,
     action: "files.upload_url_issued",
@@ -59,7 +53,7 @@ export const POST = defineRoute(async (request, _context, requestId) => {
     metadataJson: {
       taskId: payload.taskId,
       assignmentId: payload.assignmentId,
-      mimeType: payload.mimeType,
+      mimeType: normalizedMime,
       sizeBytes: payload.sizeBytes,
     },
     ip,
@@ -70,6 +64,7 @@ export const POST = defineRoute(async (request, _context, requestId) => {
     {
       storageKey,
       uploadUrl,
+      mimeType: normalizedMime,
       expiresInSeconds: 300,
     },
     requestId,

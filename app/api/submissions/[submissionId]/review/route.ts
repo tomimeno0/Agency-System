@@ -8,6 +8,7 @@ import { reviewCreateSchema } from "@/lib/validation/schemas";
 import { appendAuditLog, requestMeta } from "@/lib/services/audit";
 import { assertTaskTransitionAllowed } from "@/lib/services/task-state";
 import { createNotification } from "@/lib/services/notifications";
+import { checkRateLimitAdvanced } from "@/lib/security/rate-limit";
 
 export const POST = defineRoute(async (request, context, requestId) => {
   const actor = await requireSessionUser();
@@ -17,6 +18,18 @@ export const POST = defineRoute(async (request, context, requestId) => {
 
   const { submissionId } = await context.params;
   const payload = reviewCreateSchema.parse(await parseJson(request));
+  const comments = payload.comments?.trim() || undefined;
+  const { ip, userAgent } = requestMeta(request);
+
+  const rate = checkRateLimitAdvanced({
+    key: `submissions:review:${actor.id}:${submissionId}:${ip ?? "unknown"}`,
+    limit: 20,
+    windowMs: 60_000,
+    blockMs: 10 * 60_000,
+  });
+  if (!rate.allowed) {
+    conflict("Demasiados intentos de revision. Intenta nuevamente en unos minutos.");
+  }
 
   const submission = await prisma.submission.findUniqueOrThrow({
     where: { id: submissionId },
@@ -59,7 +72,7 @@ export const POST = defineRoute(async (request, context, requestId) => {
         submissionId,
         reviewedById: actor.id,
         decision: payload.decision,
-        comments: payload.comments,
+        comments,
       },
     });
 
@@ -78,8 +91,8 @@ export const POST = defineRoute(async (request, context, requestId) => {
         changedById: actor.id,
         comment:
           payload.decision === ReviewDecision.APPROVED
-            ? "Submission approved"
-            : "Submission requires correction",
+            ? "Entrega aprobada"
+            : "Entrega devuelta para correccion",
       },
     });
 
@@ -95,11 +108,11 @@ export const POST = defineRoute(async (request, context, requestId) => {
     title:
       payload.decision === ReviewDecision.APPROVED
         ? "Entrega aprobada"
-        : "Corrección requerida",
+        : "Correccion requerida",
     message:
       payload.decision === ReviewDecision.APPROVED
         ? `Tu entrega para ${submission.taskAssignment.task.title} fue aprobada.`
-        : `Tu entrega para ${submission.taskAssignment.task.title} requiere corrección.`,
+        : `Tu entrega para ${submission.taskAssignment.task.title} requiere correccion.`,
     metadataJson: {
       submissionId,
       taskId: submission.taskAssignment.taskId,
@@ -107,7 +120,6 @@ export const POST = defineRoute(async (request, context, requestId) => {
     },
   });
 
-  const { ip, userAgent } = requestMeta(request);
   await appendAuditLog({
     actorUserId: actor.id,
     action: "submissions.reviewed",

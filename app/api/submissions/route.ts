@@ -8,10 +8,22 @@ import { submissionCreateSchema } from "@/lib/validation/schemas";
 import { appendAuditLog, requestMeta } from "@/lib/services/audit";
 import { assertTaskTransitionAllowed } from "@/lib/services/task-state";
 import { createNotification } from "@/lib/services/notifications";
+import { checkRateLimitAdvanced } from "@/lib/security/rate-limit";
 
 export const POST = defineRoute(async (request, _context, requestId) => {
   const actor = await requireSessionUser();
   const payload = submissionCreateSchema.parse(await parseJson(request));
+  const { ip, userAgent } = requestMeta(request);
+
+  const rate = checkRateLimitAdvanced({
+    key: `submissions:create:${actor.id}:${payload.taskAssignmentId}:${ip ?? "unknown"}`,
+    limit: 25,
+    windowMs: 60_000,
+    blockMs: 10 * 60_000,
+  });
+  if (!rate.allowed) {
+    forbidden("Demasiados intentos de entrega. Intenta nuevamente en unos minutos.");
+  }
 
   const assignment = await prisma.taskAssignment.findUniqueOrThrow({
     where: { id: payload.taskAssignmentId },
@@ -38,6 +50,7 @@ export const POST = defineRoute(async (request, _context, requestId) => {
   } else {
     assertTaskTransitionAllowed(assignment.task.state, TaskState.UPLOADED);
   }
+  assertTaskTransitionAllowed(TaskState.UPLOADED, TaskState.IN_REVIEW);
 
   const submission = await prisma.$transaction(async (tx) => {
     const created = await tx.submission.create({
@@ -61,10 +74,12 @@ export const POST = defineRoute(async (request, _context, requestId) => {
           fromState: TaskState.ACCEPTED,
           toState: TaskState.IN_EDITING,
           changedById: actor.id,
-          comment: "Auto-start editing before submission",
+          comment: "Pasa a edicion automaticamente antes de entregar",
         },
       });
     }
+
+    const uploadFromState = requiresAutoStartEditing ? TaskState.IN_EDITING : assignment.task.state;
 
     await tx.task.update({
       where: { id: assignment.taskId },
@@ -74,10 +89,25 @@ export const POST = defineRoute(async (request, _context, requestId) => {
     await tx.taskStatusHistory.create({
       data: {
         taskId: assignment.taskId,
-        fromState: requiresAutoStartEditing ? TaskState.IN_EDITING : assignment.task.state,
+        fromState: uploadFromState,
         toState: TaskState.UPLOADED,
         changedById: actor.id,
-        comment: "Submission uploaded",
+        comment: "Entrega subida",
+      },
+    });
+
+    await tx.task.update({
+      where: { id: assignment.taskId },
+      data: { state: TaskState.IN_REVIEW },
+    });
+
+    await tx.taskStatusHistory.create({
+      data: {
+        taskId: assignment.taskId,
+        fromState: TaskState.UPLOADED,
+        toState: TaskState.IN_REVIEW,
+        changedById: actor.id,
+        comment: "Lista para revision",
       },
     });
 
@@ -95,12 +125,11 @@ export const POST = defineRoute(async (request, _context, requestId) => {
   await createNotification({
     userId: assignment.task.createdById,
     type: NotificationType.REVIEW_REQUIRED,
-    title: "Entrega para revisión",
+    title: "Entrega para revision",
     message: `Hay una nueva entrega en la tarea ${assignment.task.title}.`,
     metadataJson: { taskId: assignment.task.id, submissionId: submission.id },
   });
 
-  const { ip, userAgent } = requestMeta(request);
   await appendAuditLog({
     actorUserId: actor.id,
     action: "submissions.create",

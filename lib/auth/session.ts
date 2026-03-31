@@ -1,4 +1,4 @@
-import { Role } from "@prisma/client";
+import { Role, UserStatus } from "@prisma/client";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth/options";
 import { forbidden, unauthorized } from "@/lib/http/errors";
@@ -13,6 +13,9 @@ export type SessionUser = {
 export async function requireSessionUser(): Promise<SessionUser> {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id || !session.user.role) {
+    unauthorized();
+  }
+  if (session.user.status !== UserStatus.ACTIVE) {
     unauthorized();
   }
 

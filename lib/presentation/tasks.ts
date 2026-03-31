@@ -4,7 +4,7 @@ export type HumanTaskStage =
   | "Sin asignar"
   | "Esperando aceptacion"
   | "En edicion"
-  | "En revision"
+  | "Para revisar"
   | "Completada";
 
 const TASK_STATE_LABELS: Record<TaskState, string> = {
@@ -69,9 +69,9 @@ export function toHumanTaskStage(input: {
     case TaskState.IN_EDITING:
     case TaskState.NEEDS_CORRECTION:
       return "En edicion";
-    case TaskState.UPLOADED:
     case TaskState.IN_REVIEW:
-      return "En revision";
+    case TaskState.UPLOADED:
+      return "Para revisar";
     default:
       return "Completada";
   }

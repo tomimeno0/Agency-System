@@ -6,6 +6,7 @@ import { prisma } from "@/lib/db";
 import { requireRole, requireSessionUser } from "@/lib/auth/session";
 import { z } from "zod";
 import { appendAuditLog, requestMeta } from "@/lib/services/audit";
+import { dispatchSecurityAlert } from "@/lib/services/security-alerts";
 
 const statusSchema = z.object({
   status: z.nativeEnum(UserStatus),
@@ -47,6 +48,19 @@ export const PATCH = defineRoute(async (request, context, requestId) => {
     ip,
     userAgent,
   });
+
+  if (previous.status !== payload.status) {
+    await dispatchSecurityAlert({
+      title: "Cambio de estado de cuenta",
+      message: `El usuario ${userId} cambio de ${previous.status} a ${payload.status}.`,
+      metadataJson: {
+        actorUserId: actor.id,
+        userId,
+        from: previous.status,
+        to: payload.status,
+      },
+    });
+  }
 
   if (previous.status === UserStatus.PENDING_APPROVAL && payload.status === UserStatus.ACTIVE) {
     await appendAuditLog({

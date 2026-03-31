@@ -7,6 +7,7 @@ import { requireRole, requireSessionUser } from "@/lib/auth/session";
 import { userUpdateSchema } from "@/lib/validation/schemas";
 import { encryptField } from "@/lib/security/encryption";
 import { appendAuditLog, requestMeta } from "@/lib/services/audit";
+import { dispatchSecurityAlert } from "@/lib/services/security-alerts";
 import { userSafeSelect } from "@/lib/services/selects";
 
 export const GET = defineRoute(async (request, context, requestId) => {
@@ -31,6 +32,10 @@ export const PATCH = defineRoute(async (request, context, requestId) => {
 
   const { userId } = await context.params;
   const payload = userUpdateSchema.parse(await parseJson(request));
+  const previous = await prisma.user.findUniqueOrThrow({
+    where: { id: userId },
+    select: { role: true, status: true },
+  });
 
   if (actor.role === Role.ADMIN && payload.role && payload.role !== Role.EDITOR) {
     forbidden("Admin can only assign EDITOR role");
@@ -67,6 +72,19 @@ export const PATCH = defineRoute(async (request, context, requestId) => {
     ip,
     userAgent,
   });
+
+  if (payload.role && payload.role !== previous.role) {
+    await dispatchSecurityAlert({
+      title: "Cambio de rol de usuario",
+      message: `El usuario ${userId} cambio de rol ${previous.role} a ${payload.role}.`,
+      metadataJson: {
+        actorUserId: actor.id,
+        userId,
+        from: previous.role,
+        to: payload.role,
+      },
+    });
+  }
 
   return ok(updated, requestId);
 });

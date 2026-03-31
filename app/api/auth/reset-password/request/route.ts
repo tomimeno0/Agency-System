@@ -4,6 +4,7 @@ import { ApiError } from "@/lib/http/errors";
 import { prisma } from "@/lib/db";
 import { resetPasswordRequestSchema } from "@/lib/validation/schemas";
 import { generateOpaqueToken, hashToken } from "@/lib/security/tokens";
+import { checkRateLimitAdvanced } from "@/lib/security/rate-limit";
 import { appendAuditLog, requestMeta } from "@/lib/services/audit";
 import { sendResetPasswordEmail, smtpConfigured } from "@/lib/services/email";
 
@@ -12,15 +13,24 @@ export const POST = defineRoute(async (request, _context, requestId) => {
     throw new ApiError(
       503,
       "SMTP_NOT_CONFIGURED",
-      "SMTP no está configurado. Configurá SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS y SMTP_FROM.",
+      "SMTP no esta configurado. Configura SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS y SMTP_FROM.",
     );
   }
 
   const payload = resetPasswordRequestSchema.parse(await parseJson(request));
   const email = payload.email.toLowerCase();
+  const { ip, userAgent } = requestMeta(request);
+  const rate = checkRateLimitAdvanced({
+    key: `reset:request:${email}:${ip}`,
+    limit: 6,
+    windowMs: 60_000,
+    blockMs: 10 * 60_000,
+  });
+  if (!rate.allowed) {
+    return ok({ accepted: true }, requestId);
+  }
 
   const user = await prisma.user.findUnique({ where: { email } });
-  const { ip, userAgent } = requestMeta(request);
 
   if (user) {
     const rawToken = generateOpaqueToken();

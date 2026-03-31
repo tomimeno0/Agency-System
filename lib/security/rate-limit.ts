@@ -1,6 +1,7 @@
 type Bucket = {
   count: number;
   resetAt: number;
+  blockedUntil?: number;
 };
 
 const buckets = new Map<string, Bucket>();
@@ -22,4 +23,42 @@ export function checkRateLimit(key: string, limit: number, windowMs: number): { 
   existing.count += 1;
   buckets.set(key, existing);
   return { allowed: true, remaining: Math.max(0, limit - existing.count), resetAt: existing.resetAt };
+}
+
+export function checkRateLimitAdvanced(input: {
+  key: string;
+  limit: number;
+  windowMs: number;
+  blockMs?: number;
+}): { allowed: boolean; remaining: number; resetAt: number; blockedUntil: number | null } {
+  const now = Date.now();
+  const bucket = buckets.get(input.key);
+
+  if (bucket?.blockedUntil && bucket.blockedUntil > now) {
+    return {
+      allowed: false,
+      remaining: 0,
+      resetAt: bucket.resetAt,
+      blockedUntil: bucket.blockedUntil,
+    };
+  }
+
+  const base = checkRateLimit(input.key, input.limit, input.windowMs);
+  if (base.allowed) {
+    return { ...base, blockedUntil: null };
+  }
+
+  const nextBlockedUntil = now + (input.blockMs ?? input.windowMs);
+  const existing = buckets.get(input.key);
+  if (existing) {
+    existing.blockedUntil = nextBlockedUntil;
+    buckets.set(input.key, existing);
+  }
+
+  return {
+    allowed: false,
+    remaining: 0,
+    resetAt: base.resetAt,
+    blockedUntil: nextBlockedUntil,
+  };
 }

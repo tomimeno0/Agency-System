@@ -152,6 +152,7 @@ model User {
   acceptedOffersCount Int      @default(0)
   totalOffersCount    Int      @default(0)
   acceptanceRate      Float    @default(0)
+  sessionVersion      Int      @default(1)
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
@@ -168,6 +169,7 @@ model User {
   notifications       Notification[]
   auditLogs           AuditLog[]         @relation("AuditActor")
   passwordResetTokens PasswordResetToken[]
+  twoFactorChallenges TwoFactorChallenge[]
   taskFiles           TaskFile[]         @relation("FileUploader")
   taskStatusChanges   TaskStatusHistory[] @relation("TaskStatusChangedBy")
   integrationSecrets  IntegrationSecret[] @relation("IntegrationSecretCreatedBy")
@@ -177,6 +179,8 @@ model User {
   linkedFinancialMovements FinancialMovement[] @relation("FinancialMovementEditor")
   workerNotesAuthored WorkerNote[]        @relation("WorkerNoteAuthor")
   workerNotesReceived WorkerNote[]        @relation("WorkerNoteWorker")
+  taskChangeLogsAuthored TaskChangeLog[]  @relation("TaskChangeLogAuthor")
+  taskChangeAcks       TaskChangeAck[]    @relation("TaskChangeAckEditor")
 }
 
 model Client {
@@ -264,6 +268,7 @@ model Task {
   statusHistory            TaskStatusHistory[]
   files                    TaskFile[]
   financialMovements       FinancialMovement[]
+  changeLogs               TaskChangeLog[]
 
   @@index([projectId])
   @@index([clientId])
@@ -510,6 +515,25 @@ model PasswordResetToken {
   @@index([userId])
 }
 
+model TwoFactorChallenge {
+  id            String   @id @default(cuid())
+  userId        String
+  emailSnapshot String
+  codeHash      String
+  expiresAt     DateTime
+  attempts      Int      @default(0)
+  maxAttempts   Int      @default(5)
+  resendCount   Int      @default(0)
+  verifiedAt    DateTime?
+  usedAt        DateTime?
+  createdAt     DateTime @default(now())
+
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([expiresAt])
+}
+
 model Account {
   id                String  @id @default(cuid())
   userId            String
@@ -597,4 +621,34 @@ model WorkerNote {
   author     User     @relation("WorkerNoteAuthor", fields: [authorId], references: [id], onDelete: Restrict)
 
   @@index([workerId, createdAt])
+}
+
+model TaskChangeLog {
+  id               String   @id @default(cuid())
+  taskId            String
+  changedById       String
+  beforeJson        Json
+  afterJson         Json
+  changedFields     String[]
+  requiresAck       Boolean  @default(false)
+  createdAt         DateTime @default(now())
+
+  task              Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  changedBy         User     @relation("TaskChangeLogAuthor", fields: [changedById], references: [id], onDelete: Restrict)
+  acknowledgements  TaskChangeAck[]
+
+  @@index([taskId, createdAt])
+}
+
+model TaskChangeAck {
+  id             String   @id @default(cuid())
+  changeLogId    String
+  editorId       String
+  acknowledgedAt DateTime @default(now())
+
+  changeLog      TaskChangeLog @relation(fields: [changeLogId], references: [id], onDelete: Cascade)
+  editor         User          @relation("TaskChangeAckEditor", fields: [editorId], references: [id], onDelete: Cascade)
+
+  @@unique([changeLogId, editorId])
+  @@index([editorId, acknowledgedAt])
 }

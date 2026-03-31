@@ -5,6 +5,7 @@ import { ApiError } from "@/lib/http/errors";
 import { fail } from "@/lib/http/response";
 import { logger } from "@/lib/logger";
 import { resolveRequestId } from "@/lib/request-id";
+import { requireCsrf, shouldEnforceCsrf } from "@/lib/security/csrf";
 
 export type AppRouteHandler<T = NextResponse> = (
   request: NextRequest,
@@ -51,6 +52,9 @@ export function defineRoute(handler: AppRouteHandler): (request: NextRequest, co
   const wrapped = withErrorHandling(handler);
   return async (request, context) => {
     const requestId = resolveRequestId(request);
+    if (shouldEnforceCsrf(request)) {
+      requireCsrf(request);
+    }
     return wrapped(request, context, requestId);
   };
 }

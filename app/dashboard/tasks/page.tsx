@@ -29,7 +29,7 @@ function stageBadge(stage: string): string {
   if (stage === "Sin asignar") return "border border-zinc-600 bg-zinc-900 text-zinc-200";
   if (stage === "Esperando aceptacion") return "border border-amber-700 bg-amber-950/20 text-amber-200";
   if (stage === "En edicion") return "border border-blue-700 bg-blue-950/20 text-blue-200";
-  if (stage === "En revision") return "border border-violet-700 bg-violet-950/20 text-violet-200";
+  if (stage === "Para revisar") return "border border-violet-700 bg-violet-950/20 text-violet-200";
   return "border border-emerald-700 bg-emerald-950/20 text-emerald-200";
 }
 
@@ -236,7 +236,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Search
       if (estado === "sin_asignar") return task.stage === "Sin asignar";
       if (estado === "esperando_aceptacion") return task.stage === "Esperando aceptacion";
       if (estado === "en_edicion") return task.stage === "En edicion";
-      if (estado === "en_revision") return task.stage === "En revision";
+      if (estado === "en_revision") return task.stage === "Para revisar";
       if (estado === "completada") return task.stage === "Completada";
       return true;
     })
@@ -284,7 +284,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Search
           <option value="sin_asignar">Sin asignar</option>
           <option value="esperando_aceptacion">Esperando aceptacion</option>
           <option value="en_edicion">En edicion</option>
-          <option value="en_revision">En revision</option>
+          <option value="en_revision">Para revisar</option>
           <option value="completada">Completadas</option>
         </select>
         <select
@@ -373,7 +373,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Search
                   <td className="px-4 py-4">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className={`rounded-full px-2.5 py-1 text-sm ${stageBadge(task.stage)}`}>
-                        {task.stage === "En revision" ? "Lista para revisar" : task.stage}
+                        {task.stage}
                       </span>
                       <span className="rounded-full border border-zinc-700 px-2.5 py-1 text-sm text-zinc-300">
                         {task.assignmentMode === "AUTOMATIC" ? "Auto" : "Manual"}

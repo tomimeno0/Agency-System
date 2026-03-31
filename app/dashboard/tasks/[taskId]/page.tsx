@@ -12,6 +12,7 @@ import {
   toHumanTaskState,
 } from "@/lib/presentation/tasks";
 import { EditorDeliveryPanel } from "./editor-delivery-panel";
+import { TaskChangeAckPanel } from "./task-change-ack-panel";
 import { TaskDetailPanel } from "./task-detail-panel";
 
 function taskStateForEditor(taskState: TaskState, assignmentStatus?: AssignmentStatus) {
@@ -55,6 +56,16 @@ export default async function TaskDetailPage({
         include: { changedBy: { select: { id: true, displayName: true } } },
         orderBy: { changedAt: "desc" },
         take: 50,
+      },
+      changeLogs: {
+        orderBy: { createdAt: "desc" },
+        take: 30,
+        include: {
+          changedBy: { select: { id: true, displayName: true } },
+          acknowledgements: {
+            select: { editorId: true, acknowledgedAt: true },
+          },
+        },
       },
       files: {
         where: {
@@ -146,6 +157,18 @@ export default async function TaskDetailPage({
       )
       .sort((a, b) => b.reviewedAt.getTime() - a.reviewedAt.getTime());
 
+    const pendingAcks = task.changeLogs
+      .filter(
+        (change) =>
+          change.requiresAck &&
+          !change.acknowledgements.some((ack) => ack.editorId === actor.id),
+      )
+      .map((change) => ({
+        id: change.id,
+        createdAt: change.createdAt.toISOString(),
+        changedFields: change.changedFields,
+      }));
+
     return (
       <main>
         <div className="mb-4">
@@ -171,6 +194,8 @@ export default async function TaskDetailPage({
 
         <section className="grid gap-4 lg:grid-cols-3">
           <div className="space-y-4 lg:col-span-2">
+            <TaskChangeAckPanel taskId={task.id} pendingChanges={pendingAcks} />
+
             <div className="rounded-xl border border-zinc-800 bg-[#111827] p-4">
               <h2 className="mb-2 text-lg font-semibold">Descripcion</h2>
               <p className="text-sm text-zinc-300">{task.description || "Sin descripcion"}</p>
@@ -255,6 +280,7 @@ export default async function TaskDetailPage({
             assignmentId={ownAssignment?.id ?? null}
             pendingAcceptance={pendingAcceptance}
             canDeliver={canDeliver}
+            mustAcknowledgeChanges={pendingAcks.length > 0}
           />
         </section>
       </main>
@@ -317,6 +343,29 @@ export default async function TaskDetailPage({
                     ) : null}
                   </li>
                 ))}
+              </ul>
+            )}
+          </div>
+          <div className="rounded-xl border border-zinc-800 bg-[#111827] p-4">
+            <h2 className="mb-3 text-lg font-semibold">Cambios recientes</h2>
+            {task.changeLogs.length === 0 ? (
+              <p className="text-sm text-zinc-400">Sin cambios registrados.</p>
+            ) : (
+              <ul className="space-y-2 text-sm">
+                {task.changeLogs.map((change) => {
+                  const ackTotal = change.acknowledgements.length;
+                  return (
+                    <li key={change.id} className="rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2">
+                      <p className="font-medium">
+                        {change.changedBy.displayName} edito: {change.changedFields.join(", ")}
+                      </p>
+                      <p className="text-xs text-zinc-400">{change.createdAt.toLocaleString("es-AR")}</p>
+                      <p className="mt-1 text-xs text-zinc-300">
+                        ACK: {ackTotal} {change.requiresAck ? "(requerido)" : "(informativo)"}
+                      </p>
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </div>

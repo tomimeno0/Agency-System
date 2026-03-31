@@ -5,6 +5,7 @@ import { conflict, forbidden } from "@/lib/http/errors";
 import { prisma } from "@/lib/db";
 import { requireSessionUser } from "@/lib/auth/session";
 import { appendAuditLog, requestMeta } from "@/lib/services/audit";
+import { dispatchSecurityAlert } from "@/lib/services/security-alerts";
 
 export const POST = defineRoute(async (request, context, requestId) => {
   const actor = await requireSessionUser();
@@ -39,6 +40,17 @@ export const POST = defineRoute(async (request, context, requestId) => {
     },
     ip,
     userAgent,
+  });
+
+  await dispatchSecurityAlert({
+    title: "Aprobacion financiera",
+    message: `Se aprobo una liquidacion (${earningId}) por ${Number(updated.editorNetAmount).toFixed(2)} ${updated.currency}.`,
+    metadataJson: {
+      actorUserId: actor.id,
+      earningId,
+      previousStatus: earning.status,
+      nextStatus: updated.status,
+    },
   });
 
   return ok(updated, requestId);

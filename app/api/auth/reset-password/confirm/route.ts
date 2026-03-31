@@ -5,10 +5,21 @@ import { conflict, notFound } from "@/lib/http/errors";
 import { resetPasswordConfirmSchema } from "@/lib/validation/schemas";
 import { hashToken } from "@/lib/security/tokens";
 import { hashPassword } from "@/lib/security/password";
+import { checkRateLimitAdvanced } from "@/lib/security/rate-limit";
 import { appendAuditLog, requestMeta } from "@/lib/services/audit";
 
 export const POST = defineRoute(async (request, _context, requestId) => {
   const payload = resetPasswordConfirmSchema.parse(await parseJson(request));
+  const { ip, userAgent } = requestMeta(request);
+  const rate = checkRateLimitAdvanced({
+    key: `reset:confirm:${ip ?? "unknown"}`,
+    limit: 20,
+    windowMs: 60_000,
+    blockMs: 10 * 60_000,
+  });
+  if (!rate.allowed) {
+    conflict("Too many attempts");
+  }
   const tokenHash = hashToken(payload.token);
 
   const resetToken = await prisma.passwordResetToken.findUnique({
@@ -37,6 +48,7 @@ export const POST = defineRoute(async (request, _context, requestId) => {
         passwordHash,
         failedLoginAttempts: 0,
         lockUntil: null,
+        sessionVersion: { increment: 1 },
       },
     }),
     prisma.passwordResetToken.update({
@@ -48,7 +60,6 @@ export const POST = defineRoute(async (request, _context, requestId) => {
     }),
   ]);
 
-  const { ip, userAgent } = requestMeta(request);
   await appendAuditLog({
     actorUserId: resetToken.userId,
     action: "auth.password_reset_confirmed",
