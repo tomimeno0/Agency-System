@@ -50,6 +50,13 @@ export const GET = defineRoute(async (request, _context, requestId) => {
             currency: true,
           },
         },
+        campaign: {
+          select: {
+            id: true,
+            name: true,
+            status: true,
+          },
+        },
         client: {
           select: {
             id: true,
@@ -91,6 +98,13 @@ export const GET = defineRoute(async (request, _context, requestId) => {
           title: true,
           clientId: true,
           currency: true,
+        },
+      },
+      campaign: {
+        select: {
+          id: true,
+          name: true,
+          status: true,
         },
       },
       client: {
@@ -163,12 +177,15 @@ export const POST = defineRoute(async (request, _context, requestId) => {
     const createdTask = await tx.task.create({
       data: {
         projectId: payload.projectId,
+        campaignId: payload.campaignId,
         clientId: payload.clientId,
         directEditorId: payload.directEditorId,
+        videoIndex: payload.videoIndex,
         title: payload.title,
         description: payload.description,
         instructions: payload.instructions,
         deadlineAt: payload.deadlineAt ? new Date(payload.deadlineAt) : null,
+        publishAt: payload.publishAt ? new Date(payload.publishAt) : null,
         priority: payload.priority,
         estimatedDurationMinutes: payload.estimatedDurationMinutes,
         assignedMode: payload.assignedMode,
@@ -177,6 +194,7 @@ export const POST = defineRoute(async (request, _context, requestId) => {
         assignmentFlowStatus: "PENDING_OFFER",
         totalVideos: payload.totalVideos,
         splitChunkSize: payload.splitChunkSize,
+        rawAssetsReady: payload.rawAssetsReady ?? false,
         createdById: actor.id,
       },
     });
@@ -212,6 +230,7 @@ export const POST = defineRoute(async (request, _context, requestId) => {
     entityId: task.id,
     metadataJson: {
       projectId: task.projectId,
+      campaignId: task.campaignId,
       clientId: task.clientId,
       directEditorId: task.directEditorId,
       state: task.state,

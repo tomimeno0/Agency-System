@@ -54,6 +54,15 @@ export const GET = defineRoute(async (_request, context, requestId) => {
           clientId: true,
         },
       },
+      campaign: {
+        select: {
+          id: true,
+          name: true,
+          status: true,
+          videosPerCycle: true,
+          leadDays: true,
+        },
+      },
       client: {
         select: {
           id: true,
@@ -112,9 +121,13 @@ export const PATCH = defineRoute(async (request, context, requestId) => {
       title: true,
       description: true,
       instructions: true,
+      campaignId: true,
       clientId: true,
       directEditorId: true,
       deadlineAt: true,
+      publishAt: true,
+      rawAssetsReady: true,
+      videoIndex: true,
       priority: true,
       assignmentMode: true,
       state: true,
@@ -140,8 +153,10 @@ export const PATCH = defineRoute(async (request, context, requestId) => {
       data: {
         title: payload.title,
         projectId: payload.projectId === null ? null : payload.projectId,
+        campaignId: payload.campaignId === null ? null : payload.campaignId,
         clientId: payload.clientId === null ? null : payload.clientId,
         directEditorId: nextDirectEditorId,
+        videoIndex: payload.videoIndex,
         description: payload.description,
         instructions: payload.instructions,
         deadlineAt:
@@ -150,12 +165,19 @@ export const PATCH = defineRoute(async (request, context, requestId) => {
             : payload.deadlineAt
               ? new Date(payload.deadlineAt)
               : undefined,
+        publishAt:
+          payload.publishAt === null
+            ? null
+            : payload.publishAt
+              ? new Date(payload.publishAt)
+              : undefined,
         priority: payload.priority,
         estimatedDurationMinutes: payload.estimatedDurationMinutes,
         assignedMode: payload.assignedMode,
         assignmentMode: payload.assignmentMode,
         totalVideos: payload.totalVideos,
         splitChunkSize: payload.splitChunkSize,
+        rawAssetsReady: payload.rawAssetsReady,
       },
     });
 

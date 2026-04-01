@@ -375,6 +375,11 @@ export default async function TasksPage({ searchParams }: { searchParams: Search
                       <span className={`rounded-full px-2.5 py-1 text-sm ${stageBadge(task.stage)}`}>
                         {task.stage}
                       </span>
+                      {task.campaignId && !task.rawAssetsReady ? (
+                        <span className="rounded-full border border-amber-700 bg-amber-950/20 px-2.5 py-1 text-sm text-amber-200">
+                          Pendiente de brutos
+                        </span>
+                      ) : null}
                       <span className="rounded-full border border-zinc-700 px-2.5 py-1 text-sm text-zinc-300">
                         {task.assignmentMode === "AUTOMATIC" ? "Auto" : "Manual"}
                       </span>

@@ -10,10 +10,11 @@ export default async function FinancePage() {
   if (!session?.user) redirect("/login");
   if (session.user.role !== Role.OWNER) redirect("/dashboard");
 
-  const [movements, clients, tasks, editors, pendingApprovals] = await Promise.all([
+  const [movements, clients, campaigns, tasks, editors, pendingPayoutEarnings] = await Promise.all([
     prisma.financialMovement.findMany({
       include: {
         client: { select: { id: true, name: true, brandName: true } },
+        campaign: { select: { id: true, name: true } },
         task: { select: { id: true, title: true } },
         editor: { select: { id: true, displayName: true } },
       },
@@ -22,6 +23,11 @@ export default async function FinancePage() {
     }),
     prisma.client.findMany({
       select: { id: true, name: true, brandName: true },
+      orderBy: { createdAt: "desc" },
+      take: 400,
+    }),
+    prisma.campaign.findMany({
+      select: { id: true, name: true },
       orderBy: { createdAt: "desc" },
       take: 400,
     }),
@@ -36,7 +42,12 @@ export default async function FinancePage() {
       orderBy: { createdAt: "desc" },
       take: 400,
     }),
-    prisma.editorEarning.count({ where: { status: PaymentStatus.PENDING_OWNER_APPROVAL } }),
+    prisma.editorEarning.count({
+      where: {
+        status: PaymentStatus.APPROVED,
+        paidAt: null,
+      },
+    }),
   ]);
 
   return (
@@ -54,6 +65,8 @@ export default async function FinancePage() {
         notes: item.notes,
         clientId: item.clientId,
         clientName: item.client?.brandName ?? item.client?.name ?? null,
+        campaignId: item.campaignId,
+        campaignName: item.campaign?.name ?? null,
         taskId: item.taskId,
         taskTitle: item.task?.title ?? null,
         editorId: item.editorId,
@@ -63,9 +76,10 @@ export default async function FinancePage() {
         id: client.id,
         name: client.brandName ?? client.name,
       }))}
+      campaigns={campaigns}
       tasks={tasks}
       editors={editors}
-      pendingApprovals={pendingApprovals}
+      pendingPayoutEarnings={pendingPayoutEarnings}
     />
   );
 }

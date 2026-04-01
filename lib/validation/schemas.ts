@@ -7,6 +7,9 @@ import {
   LearningProgressStatus,
   NotificationStatus,
   PaymentStatus,
+  CampaignPlanPreset,
+  CampaignStatus,
+  CampaignBillingStatus,
   ReviewDecision,
   Role,
   TaskPriority,
@@ -30,6 +33,9 @@ export const assignmentStatusSchema = z.nativeEnum(AssignmentStatus);
 export const assignmentModeSchema = z.nativeEnum(AssignmentMode);
 export const reviewDecisionSchema = z.nativeEnum(ReviewDecision);
 export const paymentStatusSchema = z.nativeEnum(PaymentStatus);
+export const campaignPlanPresetSchema = z.nativeEnum(CampaignPlanPreset);
+export const campaignStatusSchema = z.nativeEnum(CampaignStatus);
+export const campaignBillingStatusSchema = z.nativeEnum(CampaignBillingStatus);
 export const notificationStatusSchema = z.nativeEnum(NotificationStatus);
 export const learningLevelSchema = z.nativeEnum(LearningLevel);
 export const learningProgressStatusSchema = z.nativeEnum(LearningProgressStatus);
@@ -86,7 +92,7 @@ export const projectCreateSchema = z.object({
   description: z.string().max(4000).optional(),
   packSize: z.number().int().positive(),
   packPrice: z.number().positive(),
-  currency: z.string().length(3).default("USD"),
+  currency: z.string().length(3).default("ARS"),
   defaultStyleNotes: z.string().max(2000).optional(),
   active: z.boolean().default(true),
 });
@@ -95,18 +101,22 @@ export const projectUpdateSchema = projectCreateSchema.partial().omit({ clientId
 
 export const taskCreateSchema = z.object({
   projectId: cuidSchema.optional(),
+  campaignId: cuidSchema.optional(),
   clientId: cuidSchema.optional(),
   directEditorId: cuidSchema.optional(),
+  videoIndex: z.number().int().positive().optional(),
   title: z.string().min(2).max(160),
   description: z.string().max(3000).optional(),
   instructions: z.string().max(8000).optional(),
   deadlineAt: dateTimeInputSchema.optional(),
+  publishAt: dateTimeInputSchema.optional(),
   priority: taskPrioritySchema.default(TaskPriority.MEDIUM),
   estimatedDurationMinutes: z.number().int().positive().optional(),
   assignedMode: z.enum(["manual", "offered"]).default("manual"),
   assignmentMode: assignmentModeSchema.optional(),
   totalVideos: z.number().int().positive().optional(),
   splitChunkSize: z.number().int().positive().default(10),
+  rawAssetsReady: z.boolean().optional(),
   state: taskStateSchema.default(TaskState.DRAFT),
 });
 
@@ -114,9 +124,11 @@ export const taskUpdateSchema = taskCreateSchema
   .partial()
   .extend({
     projectId: cuidSchema.nullable().optional(),
+    campaignId: cuidSchema.nullable().optional(),
     clientId: cuidSchema.nullable().optional(),
     directEditorId: cuidSchema.nullable().optional(),
     deadlineAt: dateTimeInputSchema.nullable().optional(),
+    publishAt: dateTimeInputSchema.nullable().optional(),
   });
 
 export const assignmentCreateSchema = z.object({
@@ -173,12 +185,57 @@ export const financialMovementCreateSchema = z.object({
   method: z.string().max(80).optional(),
   notes: z.string().max(2000).optional(),
   clientId: cuidSchema.optional(),
+  campaignId: cuidSchema.optional(),
   taskId: cuidSchema.optional(),
   editorId: cuidSchema.optional(),
   status: financialMovementStatusSchema.default(FinancialMovementStatus.CONFIRMED),
 });
 
 export const financialMovementUpdateSchema = financialMovementCreateSchema.partial();
+
+export const campaignCreateSchema = z.object({
+  clientId: cuidSchema,
+  name: z.string().min(2).max(180),
+  planPreset: campaignPlanPresetSchema,
+  videosPerCycle: z.number().int().positive().max(200),
+  pricePerVideo: z.number().positive(),
+  currency: z.literal("ARS").default("ARS"),
+  startDate: dateTimeInputSchema,
+  leadDays: z.number().int().min(0).max(15).default(1),
+  defaultEditorId: cuidSchema.optional(),
+});
+
+export const campaignUpdateSchema = campaignCreateSchema
+  .partial()
+  .extend({
+    defaultEditorId: cuidSchema.nullable().optional(),
+    status: campaignStatusSchema.optional(),
+    billingStatus: campaignBillingStatusSchema.optional(),
+  });
+
+export const campaignPublishSchema = z.object({
+  forceRepublish: z.boolean().default(false),
+});
+
+export const campaignBillingStatusSchemaInput = z.object({
+  billingStatus: campaignBillingStatusSchema,
+});
+
+export const biweeklyPayoutPreviewSchema = z.object({
+  year: z.number().int().min(2020).max(2100).optional(),
+  month: z.number().int().min(1).max(12).optional(),
+  half: z.enum(["first", "second"]).optional(),
+});
+
+export const biweeklyPayoutExecuteSchema = biweeklyPayoutPreviewSchema.extend({
+  earningIds: z.array(cuidSchema).optional(),
+  notes: z.string().max(500).optional(),
+});
+
+export const taskReopenSchema = z.object({
+  reason: z.string().min(3).max(1000),
+  forceFinancialAdjustment: z.boolean().default(false),
+});
 
 export const workerNoteCreateSchema = z.object({
   content: z.string().min(2).max(1000),

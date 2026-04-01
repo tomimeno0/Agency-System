@@ -50,6 +50,21 @@ export const POST = defineRoute(async (request, _context, requestId) => {
     await assertTaskOwnershipAccess(actor, payload.taskId);
   }
 
+  if (payload.taskId && !payload.assignmentId) {
+    const currentRawFiles = await prisma.taskFile.count({
+      where: {
+        taskId: payload.taskId,
+        assignmentId: null,
+      },
+    });
+
+    if (currentRawFiles >= env.UPLOAD_MAX_FILES_PER_TASK) {
+      badRequest(
+        `Se alcanzo el maximo de ${env.UPLOAD_MAX_FILES_PER_TASK} archivos brutos para esta tarea.`,
+      );
+    }
+  }
+
   const previousFile = await prisma.taskFile.findFirst({
     where: {
       taskId: payload.taskId,
@@ -73,6 +88,13 @@ export const POST = defineRoute(async (request, _context, requestId) => {
       version: (previousFile?.version ?? 0) + 1,
     },
   });
+
+  if (payload.taskId && !payload.assignmentId) {
+    await prisma.task.update({
+      where: { id: payload.taskId },
+      data: { rawAssetsReady: true },
+    });
+  }
 
   await appendAuditLog({
     actorUserId: actor.id,

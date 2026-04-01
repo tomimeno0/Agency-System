@@ -2,6 +2,7 @@ import { Role, UserStatus } from "@prisma/client";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth/options";
 import { forbidden, unauthorized } from "@/lib/http/errors";
+import { normalizeRole } from "@/lib/auth/roles";
 
 export type SessionUser = {
   id: string;
@@ -21,7 +22,7 @@ export async function requireSessionUser(): Promise<SessionUser> {
 
   return {
     id: session.user.id,
-    role: session.user.role,
+    role: normalizeRole(session.user.role),
     email: session.user.email,
     name: session.user.name,
   };

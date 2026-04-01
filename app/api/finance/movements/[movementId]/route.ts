@@ -27,6 +27,7 @@ export const PATCH = defineRoute(async (request, context, requestId) => {
       method: payload.method,
       notes: payload.notes,
       clientId: payload.clientId,
+      campaignId: payload.campaignId,
       taskId: payload.taskId,
       editorId: payload.editorId,
     },

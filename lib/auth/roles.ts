@@ -1,13 +1,16 @@
 import { Role } from "@prisma/client";
 
-export const ROLE_ORDER: Role[] = [Role.EDITOR, Role.ADMIN, Role.OWNER];
+export function normalizeRole(role: Role): Role {
+  return role === Role.ADMIN ? Role.OWNER : role;
+}
+
+export const ROLE_ORDER: Role[] = [Role.EDITOR, Role.OWNER];
 
 export function isAtLeastRole(current: Role, required: Role): boolean {
-  return ROLE_ORDER.indexOf(current) >= ROLE_ORDER.indexOf(required);
+  return ROLE_ORDER.indexOf(normalizeRole(current)) >= ROLE_ORDER.indexOf(normalizeRole(required));
 }
 
 export function roleToApi(role: Role): "owner" | "admin" | "editor" {
-  if (role === Role.OWNER) return "owner";
-  if (role === Role.ADMIN) return "admin";
+  if (normalizeRole(role) === Role.OWNER) return "owner";
   return "editor";
 }

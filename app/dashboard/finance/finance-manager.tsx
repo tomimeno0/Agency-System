@@ -18,6 +18,8 @@ type MovementItem = {
   notes: string | null;
   clientId: string | null;
   clientName: string | null;
+  campaignId: string | null;
+  campaignName: string | null;
   taskId: string | null;
   taskTitle: string | null;
   editorId: string | null;
@@ -34,6 +36,7 @@ type MovementForm = {
   method: string;
   notes: string;
   clientId: string;
+  campaignId: string;
   taskId: string;
   editorId: string;
 };
@@ -48,6 +51,7 @@ const EMPTY_FORM: MovementForm = {
   method: "",
   notes: "",
   clientId: "",
+  campaignId: "",
   taskId: "",
   editorId: "",
 };
@@ -59,15 +63,17 @@ function startOfDay(date: Date): Date {
 export function FinanceManager({
   initialMovements,
   clients,
+  campaigns,
   tasks,
   editors,
-  pendingApprovals,
+  pendingPayoutEarnings,
 }: {
   initialMovements: MovementItem[];
   clients: Array<{ id: string; name: string }>;
+  campaigns: Array<{ id: string; name: string }>;
   tasks: Array<{ id: string; title: string }>;
   editors: Array<{ id: string; displayName: string }>;
-  pendingApprovals: number;
+  pendingPayoutEarnings: number;
 }) {
   const [period, setPeriod] = useState<"today" | "week" | "month" | "all">("month");
   const [movements, setMovements] = useState(initialMovements);
@@ -81,6 +87,22 @@ export function FinanceManager({
   const [calcA, setCalcA] = useState("0");
   const [calcB, setCalcB] = useState("0");
   const [calcOp, setCalcOp] = useState<"+" | "-" | "*" | "/">("+");
+  const [payoutHalf, setPayoutHalf] = useState<"first" | "second">(
+    new Date().getDate() <= 15 ? "first" : "second",
+  );
+  const [payoutPreview, setPayoutPreview] = useState<{
+    label: string;
+    count: number;
+    totalEditorNet: number;
+    currency: string;
+    items: Array<{
+      id: string;
+      editorName: string;
+      taskTitle: string;
+      amount: number;
+    }>;
+  } | null>(null);
+  const [payoutLoading, setPayoutLoading] = useState<false | "preview" | "execute">(false);
 
   const filteredByPeriod = useMemo(() => {
     const now = new Date();
@@ -209,6 +231,7 @@ export function FinanceManager({
       method: movement.method ?? "",
       notes: movement.notes ?? "",
       clientId: movement.clientId ?? "",
+      campaignId: movement.campaignId ?? "",
       taskId: movement.taskId ?? "",
       editorId: movement.editorId ?? "",
     });
@@ -233,8 +256,10 @@ export function FinanceManager({
           method: string | null;
           notes: string | null;
           clientId: string | null;
+          campaignId: string | null;
           taskId: string | null;
           client?: { name: string; brandName: string | null } | null;
+          campaign?: { name: string } | null;
           task?: { title: string } | null;
           editor?: { id: string; displayName: string } | null;
         }>;
@@ -256,6 +281,8 @@ export function FinanceManager({
         notes: item.notes,
         clientId: item.clientId,
         clientName: item.client?.brandName ?? item.client?.name ?? null,
+        campaignId: item.campaignId,
+        campaignName: item.campaign?.name ?? null,
         taskId: item.taskId,
         taskTitle: item.task?.title ?? null,
         editorId: item.editor?.id ?? null,
@@ -282,6 +309,7 @@ export function FinanceManager({
       method: form.method || undefined,
       notes: form.notes || undefined,
       clientId: form.clientId || undefined,
+      campaignId: form.campaignId || undefined,
       taskId: form.taskId || undefined,
       editorId: form.editorId || undefined,
     };
@@ -319,6 +347,77 @@ export function FinanceManager({
       return;
     }
     await refreshMovements();
+  }
+
+  async function previewBiweeklyPayout() {
+    setPayoutLoading("preview");
+    setError(null);
+    try {
+      const response = await fetch("/api/finance/payouts/biweekly/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ half: payoutHalf }),
+      });
+      if (!response.ok) {
+        throw new Error("No se pudo generar la previsualizacion quincenal.");
+      }
+      const payload = (await response.json()) as {
+        data?: {
+          range?: { label?: string };
+          totals?: { count?: number; totalEditorNet?: number; currency?: string };
+          items?: Array<{
+            id: string;
+            editor?: { displayName?: string | null } | null;
+            taskAssignment?: { task?: { title?: string | null } | null } | null;
+            editorNetAmount?: number | string;
+          }>;
+        };
+      };
+      const items = payload.data?.items ?? [];
+      setPayoutPreview({
+        label: payload.data?.range?.label ?? "Corte",
+        count: payload.data?.totals?.count ?? items.length,
+        totalEditorNet: Number(payload.data?.totals?.totalEditorNet ?? 0),
+        currency: payload.data?.totals?.currency ?? "ARS",
+        items: items.map((item) => ({
+          id: item.id,
+          editorName: item.editor?.displayName ?? "Editor",
+          taskTitle: item.taskAssignment?.task?.title ?? "Sin tarea",
+          amount: Number(item.editorNetAmount ?? 0),
+        })),
+      });
+    } catch (previewError) {
+      setError(previewError instanceof Error ? previewError.message : "No se pudo previsualizar.");
+    } finally {
+      setPayoutLoading(false);
+    }
+  }
+
+  async function executeBiweeklyPayout() {
+    if (!payoutPreview || payoutPreview.count === 0) return;
+    if (!confirm("Ejecutar liquidacion manual para este corte quincenal?")) return;
+
+    setPayoutLoading("execute");
+    setError(null);
+    try {
+      const response = await fetch("/api/finance/payouts/biweekly/execute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          half: payoutHalf,
+          earningIds: payoutPreview.items.map((item) => item.id),
+        }),
+      });
+      if (!response.ok) {
+        throw new Error("No se pudo ejecutar la liquidacion quincenal.");
+      }
+      await refreshMovements();
+      await previewBiweeklyPayout();
+    } catch (executeError) {
+      setError(executeError instanceof Error ? executeError.message : "No se pudo ejecutar la liquidacion.");
+    } finally {
+      setPayoutLoading(false);
+    }
   }
 
   return (
@@ -366,8 +465,85 @@ export function FinanceManager({
         </div>
         <div className="rounded-xl border border-zinc-800 bg-[#111827] p-4">
           <p className="text-xs text-zinc-400">Pagos pendientes</p>
-          <p className="text-2xl font-semibold">{financialSummary.pending + pendingApprovals}</p>
+          <p className="text-2xl font-semibold">{financialSummary.pending + pendingPayoutEarnings}</p>
         </div>
+      </section>
+
+      <section className="mb-4 rounded-xl border border-zinc-800 bg-[#111827] p-4">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-lg font-semibold">Liquidacion quincenal manual</h2>
+          <div className="flex gap-2">
+            <select
+              value={payoutHalf}
+              onChange={(event) => setPayoutHalf(event.target.value as "first" | "second")}
+              className="rounded-md border border-zinc-700 bg-[#0b0f14] px-3 py-2 text-sm"
+            >
+              <option value="first">Corte 1-15</option>
+              <option value="second">Corte 16-fin</option>
+            </select>
+            <button
+              type="button"
+              onClick={previewBiweeklyPayout}
+              disabled={payoutLoading !== false}
+              className="rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm hover:bg-zinc-800 disabled:opacity-60"
+            >
+              {payoutLoading === "preview" ? "Calculando..." : "Previsualizar"}
+            </button>
+            <button
+              type="button"
+              onClick={executeBiweeklyPayout}
+              disabled={payoutLoading !== false || !payoutPreview || payoutPreview.count === 0}
+              className="rounded-md border border-emerald-700 bg-emerald-950/20 px-3 py-2 text-sm text-emerald-200 hover:bg-emerald-900/40 disabled:opacity-60"
+            >
+              {payoutLoading === "execute" ? "Ejecutando..." : "Ejecutar pago quincenal"}
+            </button>
+          </div>
+        </div>
+
+        {!payoutPreview ? (
+          <p className="text-sm text-zinc-400">
+            Genera una previsualizacion para ver que earnings aprobadas entran en el corte.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2">
+                <p className="text-xs text-zinc-400">Corte</p>
+                <p className="text-sm font-semibold">{payoutPreview.label}</p>
+              </div>
+              <div className="rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2">
+                <p className="text-xs text-zinc-400">Items</p>
+                <p className="text-sm font-semibold">{payoutPreview.count}</p>
+              </div>
+              <div className="rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2">
+                <p className="text-xs text-zinc-400">Total a pagar</p>
+                <p className="text-sm font-semibold">
+                  ${payoutPreview.totalEditorNet.toFixed(2)} {payoutPreview.currency}
+                </p>
+              </div>
+            </div>
+            <div className="max-h-44 overflow-auto rounded-md border border-zinc-700">
+              <table className="w-full text-left text-xs">
+                <thead className="border-b border-zinc-700 text-zinc-300">
+                  <tr>
+                    <th className="px-2 py-2 font-medium">Editor</th>
+                    <th className="px-2 py-2 font-medium">Tarea</th>
+                    <th className="px-2 py-2 font-medium">Monto</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {payoutPreview.items.map((item) => (
+                    <tr key={item.id} className="border-b border-zinc-800">
+                      <td className="px-2 py-2">{item.editorName}</td>
+                      <td className="px-2 py-2">{item.taskTitle}</td>
+                      <td className="px-2 py-2">${item.amount.toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </section>
 
       <section className="mb-4 rounded-xl border border-zinc-800 bg-[#111827] p-4">
@@ -425,6 +601,18 @@ export function FinanceManager({
             {clients.map((client) => (
               <option key={client.id} value={client.id}>
                 {client.name}
+              </option>
+            ))}
+          </select>
+          <select
+            value={form.campaignId}
+            onChange={(event) => setFormField("campaignId", event.target.value)}
+            className="rounded-md border border-zinc-700 bg-[#0b0f14] px-3 py-2 text-sm"
+          >
+            <option value="">Sin campana</option>
+            {campaigns.map((campaign) => (
+              <option key={campaign.id} value={campaign.id}>
+                {campaign.name}
               </option>
             ))}
           </select>
@@ -606,7 +794,7 @@ export function FinanceManager({
                 <th className="px-2 py-2 font-medium">Monto</th>
                 <th className="px-2 py-2 font-medium">Descripcion</th>
                 <th className="px-2 py-2 font-medium">Editor</th>
-                <th className="px-2 py-2 font-medium">Cliente / Task</th>
+                <th className="px-2 py-2 font-medium">Cliente / Campana / Task</th>
                 <th className="px-2 py-2 font-medium">Estado</th>
                 <th className="px-2 py-2 font-medium">Acciones</th>
               </tr>
@@ -631,7 +819,8 @@ export function FinanceManager({
                     <td className="px-2 py-2">{movement.editorName ?? "-"}</td>
                     <td className="px-2 py-2">
                       <p>{movement.clientName ?? "-"}</p>
-                      <p className="text-xs text-zinc-400">{movement.taskTitle ?? "-"}</p>
+                      <p className="text-xs text-zinc-400">{movement.campaignName ?? "-"}</p>
+                      <p className="text-xs text-zinc-500">{movement.taskTitle ?? "-"}</p>
                     </td>
                     <td className="px-2 py-2">{movement.status}</td>
                     <td className="px-2 py-2">

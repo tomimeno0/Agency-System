@@ -12,6 +12,7 @@ import { verifyPassword } from "@/lib/security/password";
 import { hashToken } from "@/lib/security/tokens";
 import { appendAuditLog } from "@/lib/services/audit";
 import { dispatchSecurityAlert } from "@/lib/services/security-alerts";
+import { normalizeRole } from "@/lib/auth/roles";
 
 const credentialsSchema = z.object({
   email: z.string().email(),
@@ -229,7 +230,7 @@ export const authOptions: NextAuthOptions = {
           id: user.id,
           email: user.email,
           name: user.displayName,
-          role: user.role,
+          role: normalizeRole(user.role),
           status: user.status,
           sessionVersion: user.sessionVersion,
         };
@@ -240,7 +241,7 @@ export const authOptions: NextAuthOptions = {
     jwt: async ({ token, user }) => {
       const appToken = token as AppJwt;
       if (user) {
-        appToken.role = user.role as Role;
+        appToken.role = normalizeRole(user.role as Role);
         appToken.status = user.status as UserStatus;
         appToken.sessionVersion = Number(user.sessionVersion ?? 1);
         appToken.invalidSession = false;
@@ -266,7 +267,7 @@ export const authOptions: NextAuthOptions = {
           return appToken;
         }
 
-        appToken.role = liveUser.role;
+        appToken.role = normalizeRole(liveUser.role);
         appToken.status = liveUser.status;
         appToken.sessionVersion = liveUser.sessionVersion;
         appToken.invalidSession = false;
@@ -280,7 +281,7 @@ export const authOptions: NextAuthOptions = {
       }
       if (session.user) {
         session.user.id = appToken.sub ?? session.user.id;
-        session.user.role = appToken.role ?? Role.EDITOR;
+        session.user.role = appToken.role ? normalizeRole(appToken.role) : Role.EDITOR;
         session.user.status = appToken.status ?? UserStatus.ACTIVE;
       }
       return session;

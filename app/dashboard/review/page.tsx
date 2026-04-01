@@ -10,7 +10,7 @@ import { ReviewActions } from "./review-actions";
 export default async function ReviewPage() {
   const session = await getServerSession(authOptions);
   if (!session?.user) redirect("/login");
-  if (session.user.role === Role.EDITOR) redirect("/dashboard");
+  if (session.user.role !== Role.OWNER) redirect("/dashboard");
 
   const pendingSubmissions = await prisma.submission.findMany({
     where: {

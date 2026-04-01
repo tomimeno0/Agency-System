@@ -18,6 +18,7 @@ export const GET = defineRoute(async (request, _context, requestId) => {
   const movements = await prisma.financialMovement.findMany({
     include: {
       client: { select: { id: true, name: true, brandName: true } },
+      campaign: { select: { id: true, name: true, status: true } },
       task: { select: { id: true, title: true } },
       editor: { select: { id: true, displayName: true } },
       createdBy: { select: { id: true, displayName: true } },
@@ -48,6 +49,7 @@ export const POST = defineRoute(async (request, _context, requestId) => {
       method: payload.method,
       notes: payload.notes,
       clientId: payload.clientId,
+      campaignId: payload.campaignId,
       taskId: payload.taskId,
       editorId: payload.editorId,
       createdById: actor.id,

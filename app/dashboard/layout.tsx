@@ -21,8 +21,10 @@ export default async function DashboardLayout({ children }: { children: ReactNod
 
   const navItems =
     isOwner || isAdmin
-      ? [
+        ? [
           { href: "/dashboard", label: "General" },
+          ...(isOwner ? [{ href: "/dashboard/campaigns", label: "Campanas" }] : []),
+          { href: "/dashboard/calendar", label: "Calendario" },
           { href: "/dashboard/clients", label: "Clientes" },
           { href: "/dashboard/workers", label: "Workers" },
           { href: "/dashboard/tasks", label: "Tareas" },
@@ -34,6 +36,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
         ]
       : [
           { href: "/dashboard", label: "General" },
+          { href: "/dashboard/calendar", label: "Calendario" },
           { href: "/dashboard/tasks", label: "Mis tareas" },
           { href: "/dashboard/submissions", label: "Entregas" },
           { href: "/dashboard/earnings", label: "Mis ingresos" },

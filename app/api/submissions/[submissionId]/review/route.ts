@@ -9,11 +9,12 @@ import { appendAuditLog, requestMeta } from "@/lib/services/audit";
 import { assertTaskTransitionAllowed } from "@/lib/services/task-state";
 import { createNotification } from "@/lib/services/notifications";
 import { checkRateLimitAdvanced } from "@/lib/security/rate-limit";
+import { createApprovedEarningForAssignment } from "@/lib/services/finance";
 
 export const POST = defineRoute(async (request, context, requestId) => {
   const actor = await requireSessionUser();
-  if (actor.role === Role.EDITOR) {
-    forbidden("Editor cannot review submissions");
+  if (actor.role !== Role.OWNER) {
+    forbidden("Solo owner puede cerrar la revision final");
   }
 
   const { submissionId } = await context.params;
@@ -98,6 +99,14 @@ export const POST = defineRoute(async (request, context, requestId) => {
 
     return createdReview;
   });
+
+  if (payload.decision === ReviewDecision.APPROVED) {
+    await createApprovedEarningForAssignment({
+      taskAssignmentId: submission.taskAssignmentId,
+      approvedById: actor.id,
+      currency: "ARS",
+    });
+  }
 
   await createNotification({
     userId: submission.taskAssignment.editor.id,
