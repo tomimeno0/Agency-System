@@ -4,6 +4,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth/options";
 import { prisma } from "@/lib/db";
+import { toHumanPriority, toHumanTaskState } from "@/lib/presentation/tasks";
 
 type SearchParams = Promise<{
   month?: string;
@@ -75,6 +76,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: Sea
     select: {
       id: true,
       title: true,
+      videoIndex: true,
       state: true,
       priority: true,
       publishAt: true,
@@ -91,53 +93,33 @@ export default async function CalendarPage({ searchParams }: { searchParams: Sea
     take: 3000,
   });
 
-  const rows = tasks.flatMap((task) => {
+  const rows = tasks.map((task) => {
     const clientName = task.client?.brandName ?? task.client?.name ?? "-";
     const editorName =
       task.directEditor?.displayName ??
       task.assignments[0]?.editor.displayName ??
       "Sin asignar";
-    const level = severity(task.deadlineAt, now);
-    const base = {
+    const relevantDate = task.deadlineAt ?? task.publishAt;
+    const level = severity(relevantDate, now);
+    return {
       taskId: task.id,
       title: task.title,
       campaignName: task.campaign?.name ?? "-",
       clientName,
       editorName,
-      state: task.state,
-      priority: task.priority,
+      state: toHumanTaskState(task.state),
+      priority: toHumanPriority(task.priority),
+      publishAt: task.publishAt,
+      deadlineAt: task.deadlineAt,
       level,
     };
-    const list: Array<{
-      taskId: string;
-      type: "Publicacion" | "Deadline";
-      at: Date;
-      title: string;
-      campaignName: string;
-      clientName: string;
-      editorName: string;
-      state: string;
-      priority: string;
-      level: "critical" | "warning" | "normal";
-    }> = [];
-    if (task.publishAt) {
-      list.push({
-        ...base,
-        type: "Publicacion",
-        at: task.publishAt,
-      });
-    }
-    if (task.deadlineAt) {
-      list.push({
-        ...base,
-        type: "Deadline",
-        at: task.deadlineAt,
-      });
-    }
-    return list;
   });
 
-  rows.sort((a, b) => a.at.getTime() - b.at.getTime());
+  rows.sort((a, b) => {
+    const aDate = a.deadlineAt ?? a.publishAt ?? new Date(0);
+    const bDate = b.deadlineAt ?? b.publishAt ?? new Date(0);
+    return aDate.getTime() - bDate.getTime();
+  });
 
   const monthKey = `${monthStart.getFullYear()}-${String(monthStart.getMonth() + 1).padStart(2, "0")}`;
   const previousMonth = new Date(monthStart.getFullYear(), monthStart.getMonth() - 1, 1, 0, 0, 0, 0);
@@ -152,8 +134,8 @@ export default async function CalendarPage({ searchParams }: { searchParams: Sea
           <h1 className="text-3xl font-semibold">Calendario</h1>
           <p className="text-sm text-zinc-400">
             {actor.role === Role.OWNER
-              ? "Vista global de publicaciones y deadlines."
-              : "Tus tareas con publicacion y fecha de entrega."}
+              ? "Vista global de campanas, deadlines y fechas de publicacion."
+              : "Tus tareas con fecha de entrega y publicacion."}
           </p>
         </div>
         <div className="flex gap-2">
@@ -174,8 +156,8 @@ export default async function CalendarPage({ searchParams }: { searchParams: Sea
           <table className="w-full text-left text-sm">
             <thead className="border-b border-zinc-700 text-zinc-300">
               <tr>
-                <th className="px-4 py-3 font-medium">Fecha</th>
-                <th className="px-4 py-3 font-medium">Tipo</th>
+                <th className="px-4 py-3 font-medium">Deadline</th>
+                <th className="px-4 py-3 font-medium">Publicacion</th>
                 <th className="px-4 py-3 font-medium">Tarea</th>
                 <th className="px-4 py-3 font-medium">Campana</th>
                 <th className="px-4 py-3 font-medium">Cliente</th>
@@ -186,9 +168,9 @@ export default async function CalendarPage({ searchParams }: { searchParams: Sea
             </thead>
             <tbody>
               {rows.map((row) => (
-                <tr key={`${row.taskId}-${row.type}-${row.at.toISOString()}`} className={`border-b border-zinc-800 ${toneClass(row.level)}`}>
-                  <td className="px-4 py-3">{row.at.toLocaleString("es-AR")}</td>
-                  <td className="px-4 py-3">{row.type}</td>
+                <tr key={row.taskId} className={`border-b border-zinc-800 ${toneClass(row.level)}`}>
+                  <td className="px-4 py-3">{row.deadlineAt ? row.deadlineAt.toLocaleString("es-AR") : "-"}</td>
+                  <td className="px-4 py-3">{row.publishAt ? row.publishAt.toLocaleString("es-AR") : "-"}</td>
                   <td className="px-4 py-3">
                     <Link href={`/dashboard/tasks/${row.taskId}`} className="underline hover:text-white">
                       {row.title}

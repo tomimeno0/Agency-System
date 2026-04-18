@@ -279,6 +279,7 @@ model Campaign {
   defaultEditor    User?                 @relation("CampaignDefaultEditor", fields: [defaultEditorId], references: [id], onDelete: SetNull)
   createdBy        User                  @relation("CampaignCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
   tasks            Task[]
+  rawFiles         TaskFile[]
   financialMovements FinancialMovement[]
 
   @@index([clientId])
@@ -386,6 +387,7 @@ model TaskStatusHistory {
 model TaskFile {
   id           String         @id @default(cuid())
   taskId       String?
+  campaignId   String?
   assignmentId String?
   uploadedById String
   storageKey   String         @unique
@@ -398,11 +400,13 @@ model TaskFile {
   createdAt    DateTime       @default(now())
 
   task         Task?          @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  campaign     Campaign?      @relation(fields: [campaignId], references: [id], onDelete: SetNull)
   assignment   TaskAssignment? @relation(fields: [assignmentId], references: [id], onDelete: SetNull)
   uploadedBy   User           @relation("FileUploader", fields: [uploadedById], references: [id], onDelete: Restrict)
   submissions  Submission[]
 
   @@index([taskId])
+  @@index([campaignId])
   @@index([assignmentId])
 }
 

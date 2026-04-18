@@ -1,6 +1,7 @@
 import { defineRoute, parseJson } from "@/lib/http/route";
 import { ok } from "@/lib/http/response";
 import { badRequest, forbidden } from "@/lib/http/errors";
+import { prisma } from "@/lib/db";
 import { requireSessionUser } from "@/lib/auth/session";
 import { uploadUrlSchema } from "@/lib/validation/schemas";
 import { buildStorageKey, createSignedUploadUrl, validateUpload } from "@/lib/storage/r2";
@@ -24,8 +25,12 @@ export const POST = defineRoute(async (request, _context, requestId) => {
     forbidden("Demasiados intentos de subida. Intenta nuevamente en unos minutos.");
   }
 
-  if (!payload.taskId && !payload.assignmentId) {
-    badRequest("Either taskId or assignmentId is required");
+  if (!payload.taskId && !payload.assignmentId && !payload.campaignId) {
+    badRequest("Debes indicar taskId, assignmentId o campaignId.");
+  }
+
+  if (payload.campaignId && payload.assignmentId) {
+    badRequest("No puedes combinar campaignId con assignmentId.");
   }
 
   const normalizedMime = validateUpload(payload.mimeType, payload.sizeBytes, payload.fileName);
@@ -36,6 +41,16 @@ export const POST = defineRoute(async (request, _context, requestId) => {
 
   if (payload.taskId && actor.role === Role.EDITOR) {
     await assertTaskOwnershipAccess(actor, payload.taskId);
+  }
+
+  if (payload.campaignId) {
+    if (actor.role !== Role.OWNER) {
+      forbidden("Solo owner puede subir brutos a campanas.");
+    }
+    await prisma.campaign.findUniqueOrThrow({
+      where: { id: payload.campaignId },
+      select: { id: true },
+    });
   }
 
   const storageKey = buildStorageKey(payload.fileName);
@@ -53,6 +68,7 @@ export const POST = defineRoute(async (request, _context, requestId) => {
     metadataJson: {
       taskId: payload.taskId,
       assignmentId: payload.assignmentId,
+      campaignId: payload.campaignId,
       mimeType: normalizedMime,
       sizeBytes: payload.sizeBytes,
     },

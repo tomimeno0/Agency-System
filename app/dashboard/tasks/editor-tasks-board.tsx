@@ -6,6 +6,8 @@ import { EditorTaskActions } from "./editor-task-actions";
 type EditorTaskRow = {
   id: string;
   title: string;
+  campaignId: string | null;
+  campaignName: string | null;
   clientName: string;
   status: "Pendiente" | "En proceso" | "En revision" | "Correccion" | "Completada";
   deadlineAt: string | null;
@@ -47,6 +49,8 @@ export function EditorTasksBoard({
   const [priorityFilter, setPriorityFilter] = useState(initialFilters?.prioridad ?? "todos");
   const [deadlineFilter, setDeadlineFilter] = useState(initialFilters?.deadline ?? "todos");
   const [clientFilter, setClientFilter] = useState(initialFilters?.cliente ?? "todos");
+  const [campaignLoading, setCampaignLoading] = useState<string | null>(null);
+  const [campaignActionError, setCampaignActionError] = useState<string | null>(null);
 
   const now = useMemo(() => new Date(), []);
   const startDay = useMemo(
@@ -83,12 +87,104 @@ export function EditorTasksBoard({
     [tasks, statusFilter, priorityFilter, clientFilter, deadlineFilter, now, startDay, endDay, in24h, in48h],
   );
 
+  const pendingCampaigns = useMemo(() => {
+    const map = new Map<string, { id: string; name: string; pendingCount: number }>();
+    for (const task of tasks) {
+      if (!task.pendingAcceptance || !task.campaignId) continue;
+      const current = map.get(task.campaignId);
+      if (current) {
+        current.pendingCount += 1;
+      } else {
+        map.set(task.campaignId, {
+          id: task.campaignId,
+          name: task.campaignName ?? "Campana",
+          pendingCount: 1,
+        });
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => b.pendingCount - a.pendingCount);
+  }, [tasks]);
+
+  async function respondCampaign(campaignId: string, decision: "accept" | "reject") {
+    setCampaignActionError(null);
+    setCampaignLoading(campaignId);
+    const reason =
+      decision === "reject"
+        ? window.prompt("Motivo de rechazo para toda la campana (opcional):", "") ?? ""
+        : undefined;
+    try {
+      const response = await fetch(`/api/campaigns/${campaignId}/respond`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          decision,
+          reason: reason || undefined,
+        }),
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as
+          | { error?: { message?: string } }
+          | null;
+        throw new Error(payload?.error?.message ?? "No se pudo responder la campana.");
+      }
+      window.location.reload();
+    } catch (error) {
+      setCampaignActionError(
+        error instanceof Error ? error.message : "No se pudo responder la campana.",
+      );
+      setCampaignLoading(null);
+    }
+  }
+
   return (
     <main className="w-full">
       <div className="mb-4">
         <h1 className="text-3xl font-semibold">Mis tareas</h1>
         <p className="text-base text-zinc-400">Organiza, acepta, trabaja y entrega.</p>
       </div>
+
+      {pendingCampaigns.length > 0 ? (
+        <section className="mb-5 rounded-xl border border-blue-800 bg-blue-950/20 p-4">
+          <h2 className="mb-2 text-lg font-semibold text-blue-100">Campanas pendientes de aceptar</h2>
+          <p className="mb-3 text-sm text-blue-200">
+            Acepta una vez y se aceptan todas las tareas pendientes de esa campana.
+          </p>
+          <div className="space-y-2">
+            {pendingCampaigns.map((campaign) => (
+              <div
+                key={campaign.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-blue-700 bg-[#0b0f14] px-3 py-2"
+              >
+                <div>
+                  <p className="font-medium text-blue-100">{campaign.name}</p>
+                  <p className="text-xs text-blue-300">
+                    {campaign.pendingCount} tarea(s) pendientes de aceptar
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => respondCampaign(campaign.id, "accept")}
+                    disabled={campaignLoading !== null}
+                    className="rounded-md border border-emerald-700 px-2.5 py-1 text-xs text-emerald-300 hover:bg-emerald-950/30 disabled:opacity-60"
+                  >
+                    {campaignLoading === campaign.id ? "Procesando..." : "Aceptar campana"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => respondCampaign(campaign.id, "reject")}
+                    disabled={campaignLoading !== null}
+                    className="rounded-md border border-red-700 px-2.5 py-1 text-xs text-red-300 hover:bg-red-950/30 disabled:opacity-60"
+                  >
+                    Rechazar campana
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+          {campaignActionError ? <p className="mt-2 text-sm text-red-300">{campaignActionError}</p> : null}
+        </section>
+      ) : null}
 
       <div className="mb-5 grid gap-2 rounded-xl border border-zinc-800 bg-[#111827] p-4 md:grid-cols-4">
         <select
@@ -178,6 +274,7 @@ export function EditorTasksBoard({
                       assignmentId={task.assignmentId}
                       pendingAcceptance={task.pendingAcceptance}
                       canDeliver={task.canDeliver}
+                      campaignPendingAcceptance={task.pendingAcceptance && Boolean(task.campaignId)}
                     />
                   </td>
                 </tr>

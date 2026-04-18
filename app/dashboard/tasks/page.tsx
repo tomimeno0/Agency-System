@@ -130,6 +130,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Search
         : undefined,
     include: {
       client: { select: { id: true, name: true, brandName: true } },
+      campaign: { select: { id: true, name: true } },
       directEditor: { select: { id: true, displayName: true } },
       assignments:
         actor.role === Role.EDITOR
@@ -175,6 +176,8 @@ export default async function TasksPage({ searchParams }: { searchParams: Search
       return {
         id: task.id,
         title: task.title,
+        campaignId: task.campaign?.id ?? null,
+        campaignName: task.campaign?.name ?? null,
         clientName,
         status,
         deadlineAt: task.deadlineAt ? task.deadlineAt.toISOString() : null,

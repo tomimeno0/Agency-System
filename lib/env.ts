@@ -19,6 +19,7 @@ const envSchema = z.object({
   R2_BUCKET: z.string().optional(),
   UPLOAD_MAX_BYTES: z.coerce.number().int().positive().default(524288000),
   UPLOAD_MAX_FILES_PER_TASK: z.coerce.number().int().min(30).max(500).default(60),
+  UPLOAD_MAX_FILES_PER_CAMPAIGN: z.coerce.number().int().min(30).max(1000).default(200),
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().int().positive().optional(),
   SMTP_USER: z.string().optional(),

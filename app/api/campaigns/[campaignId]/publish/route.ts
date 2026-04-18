@@ -55,30 +55,46 @@ export const POST = defineRoute(async (request, context, requestId) => {
 
   const created = await prisma.$transaction(async (tx) => {
     if (payload.forceRepublish && campaign._count.tasks > 0) {
+      const campaignTaskIds = (
+        await tx.task.findMany({
+          where: { campaignId: campaign.id },
+          select: { id: true },
+        })
+      ).map((item) => item.id);
+
       await tx.taskAssignment.deleteMany({
         where: {
-          task: {
-            campaignId: campaign.id,
-          },
+          taskId: { in: campaignTaskIds },
         },
       });
       await tx.taskStatusHistory.deleteMany({
         where: {
-          task: {
-            campaignId: campaign.id,
-          },
+          taskId: { in: campaignTaskIds },
         },
       });
-      await tx.task.updateMany({
-        where: { campaignId: campaign.id },
-        data: { campaignId: null },
-      });
       await tx.task.deleteMany({
-        where: { campaignId: campaign.id },
+        where: { id: { in: campaignTaskIds } },
+      });
+      await tx.taskFile.updateMany({
+        where: {
+          campaignId: campaign.id,
+          taskId: { in: campaignTaskIds },
+        },
+        data: { taskId: null },
       });
     }
 
+    const campaignRawFiles = await tx.taskFile.findMany({
+      where: {
+        campaignId: campaign.id,
+        taskId: null,
+        assignmentId: null,
+      },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    });
+
     for (const item of schedule) {
+      const rawFileForTask = campaignRawFiles[item.videoIndex - 1] ?? null;
       const task = await tx.task.create({
         data: {
           campaignId: campaign.id,
@@ -96,10 +112,19 @@ export const POST = defineRoute(async (request, context, requestId) => {
           assignmentFlowStatus: TaskAssignmentFlowStatus.PENDING_OFFER,
           totalVideos: campaign.videosPerCycle,
           splitChunkSize: 10,
-          rawAssetsReady: false,
+          rawAssetsReady: Boolean(rawFileForTask),
           createdById: actor.id,
         },
       });
+
+      if (rawFileForTask) {
+        await tx.taskFile.update({
+          where: { id: rawFileForTask.id },
+          data: {
+            taskId: task.id,
+          },
+        });
+      }
 
       await tx.taskStatusHistory.create({
         data: {
@@ -180,7 +205,6 @@ export const POST = defineRoute(async (request, context, requestId) => {
 });
 
 function TaskPriorityFromLeadDays(leadDays: number): TaskPriority {
-  if (leadDays <= 0) return TaskPriority.URGENT;
-  if (leadDays <= 1) return TaskPriority.HIGH;
+  if (leadDays < 0) return TaskPriority.HIGH;
   return TaskPriority.MEDIUM;
 }

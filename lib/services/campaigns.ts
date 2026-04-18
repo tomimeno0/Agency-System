@@ -23,7 +23,8 @@ export function buildCampaignSchedule(input: {
   const result: Array<{ videoIndex: number; publishAt: Date; deadlineAt: Date }> = [];
   for (let index = 0; index < count; index += 1) {
     const publishAt = new Date(cycleStart.getTime() + stepMs * index);
-    const deadlineAt = new Date(publishAt.getTime() - leadDaysMs);
+    const rawDeadline = publishAt.getTime() - leadDaysMs;
+    const deadlineAt = new Date(Math.max(rawDeadline, cycleStart.getTime()));
     result.push({
       videoIndex: index + 1,
       publishAt,

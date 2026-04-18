@@ -25,8 +25,12 @@ export const POST = defineRoute(async (request, _context, requestId) => {
     forbidden("Demasiados intentos de finalizacion. Intenta nuevamente en unos minutos.");
   }
 
-  if (!payload.taskId && !payload.assignmentId) {
-    badRequest("Either taskId or assignmentId is required");
+  if (!payload.taskId && !payload.assignmentId && !payload.campaignId) {
+    badRequest("Debes indicar taskId, assignmentId o campaignId.");
+  }
+
+  if (payload.campaignId && payload.assignmentId) {
+    badRequest("No puedes combinar campaignId con assignmentId.");
   }
 
   const normalizedMime = validateUpload(payload.mimeType, payload.sizeBytes, payload.originalName);
@@ -50,6 +54,16 @@ export const POST = defineRoute(async (request, _context, requestId) => {
     await assertTaskOwnershipAccess(actor, payload.taskId);
   }
 
+  if (payload.campaignId) {
+    if (actor.role !== "OWNER") {
+      forbidden("Solo owner puede finalizar brutos de campanas.");
+    }
+    await prisma.campaign.findUniqueOrThrow({
+      where: { id: payload.campaignId },
+      select: { id: true },
+    });
+  }
+
   if (payload.taskId && !payload.assignmentId) {
     const currentRawFiles = await prisma.taskFile.count({
       where: {
@@ -65,18 +79,42 @@ export const POST = defineRoute(async (request, _context, requestId) => {
     }
   }
 
-  const previousFile = await prisma.taskFile.findFirst({
-    where: {
-      taskId: payload.taskId,
-      assignmentId: payload.assignmentId,
-    },
-    orderBy: { version: "desc" },
-    select: { version: true },
-  });
+  if (payload.campaignId && !payload.taskId && !payload.assignmentId) {
+    const currentCampaignFiles = await prisma.taskFile.count({
+      where: {
+        campaignId: payload.campaignId,
+        taskId: null,
+        assignmentId: null,
+      },
+    });
+    if (currentCampaignFiles >= env.UPLOAD_MAX_FILES_PER_CAMPAIGN) {
+      badRequest(
+        `Se alcanzo el maximo de ${env.UPLOAD_MAX_FILES_PER_CAMPAIGN} brutos para esta campana.`,
+      );
+    }
+  }
+
+  const previousFileWhere =
+    payload.assignmentId
+      ? { assignmentId: payload.assignmentId }
+      : payload.taskId
+        ? { taskId: payload.taskId, assignmentId: null }
+        : payload.campaignId
+          ? { campaignId: payload.campaignId, taskId: null, assignmentId: null }
+          : null;
+
+  const previousFile = previousFileWhere
+    ? await prisma.taskFile.findFirst({
+        where: previousFileWhere,
+        orderBy: { version: "desc" },
+        select: { version: true },
+      })
+    : null;
 
   const file = await prisma.taskFile.create({
     data: {
       taskId: payload.taskId,
+      campaignId: payload.campaignId,
       assignmentId: payload.assignmentId,
       uploadedById: actor.id,
       storageKey: payload.storageKey,
@@ -104,6 +142,7 @@ export const POST = defineRoute(async (request, _context, requestId) => {
     metadataJson: {
       taskId: payload.taskId,
       assignmentId: payload.assignmentId,
+      campaignId: payload.campaignId,
       storageKey: payload.storageKey,
       version: file.version,
       scanStatus: "pending",

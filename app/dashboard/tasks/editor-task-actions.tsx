@@ -8,9 +8,16 @@ type Props = {
   assignmentId: string | null;
   pendingAcceptance: boolean;
   canDeliver: boolean;
+  campaignPendingAcceptance?: boolean;
 };
 
-export function EditorTaskActions({ taskId, assignmentId, pendingAcceptance, canDeliver }: Props) {
+export function EditorTaskActions({
+  taskId,
+  assignmentId,
+  pendingAcceptance,
+  canDeliver,
+  campaignPendingAcceptance = false,
+}: Props) {
   const [loading, setLoading] = useState<"accept" | "reject" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -44,7 +51,7 @@ export function EditorTaskActions({ taskId, assignmentId, pendingAcceptance, can
   return (
     <div className="space-y-1">
       <div className="flex flex-wrap gap-2">
-        {pendingAcceptance && assignmentId ? (
+        {pendingAcceptance && assignmentId && !campaignPendingAcceptance ? (
           <>
             <button
               type="button"
@@ -79,6 +86,9 @@ export function EditorTaskActions({ taskId, assignmentId, pendingAcceptance, can
           </Link>
         ) : null}
       </div>
+      {campaignPendingAcceptance ? (
+        <p className="text-xs text-zinc-400">Acepta o rechaza desde el bloque de campana.</p>
+      ) : null}
       {error ? <p className="text-xs text-red-400">{error}</p> : null}
     </div>
   );

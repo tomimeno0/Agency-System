@@ -243,6 +243,7 @@ export const workerNoteCreateSchema = z.object({
 
 export const uploadUrlSchema = z.object({
   taskId: cuidSchema.optional(),
+  campaignId: cuidSchema.optional(),
   assignmentId: cuidSchema.optional(),
   fileName: z.string().min(1).max(255),
   mimeType: z.string().min(3).max(100),
@@ -253,6 +254,7 @@ export const uploadUrlSchema = z.object({
 export const finalizeFileSchema = z.object({
   storageKey: z.string().min(1),
   taskId: cuidSchema.optional(),
+  campaignId: cuidSchema.optional(),
   assignmentId: cuidSchema.optional(),
   originalName: z.string().min(1).max(255),
   mimeType: z.string().min(3).max(100),
